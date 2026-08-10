@@ -71,8 +71,15 @@ python scripts/init_db.py                                   # create the databas
 python scripts/init_db.py --reset                           # destructive rebuild
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
-uvicorn app.main:app --host 0.0.0.0 --port 8443 --reload     # dev
+python scripts/check_db.py                                  # sanity checks — run before committing
+python scripts/check_db.py --expect-import                  # also assert the import numbers
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload     # dev
 ```
+
+**Run `scripts/check_db.py` after any change that touches the schema, the importer, or how
+batches are written.** It enforces the locked decisions above as executable checks and exits
+non-zero on failure. If a check fails, fix the cause — don't weaken the check. If a design
+decision genuinely changed, say so explicitly and update the check deliberately.
 
 ## Conventions
 
