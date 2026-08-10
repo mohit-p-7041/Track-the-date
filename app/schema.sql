@@ -77,8 +77,9 @@ CREATE TABLE IF NOT EXISTS batches (
 
 -- THE DUPLICATION GUARD.
 -- A product cannot have two live batches with the same expiry date. The app
--- catches this before insert and offers "add to quantity" instead; this index
--- is the backstop so it can never happen by another route.
+-- should catch this before insert and tell the person it is already tracked
+-- and when it expires — there are no quantities to add to. This index is the
+-- backstop so it can never happen by another route.
 -- Resolved rows (pulled/sold) are excluded so history can repeat a date.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_unique_live
     ON batches(product_id, expiry_date)

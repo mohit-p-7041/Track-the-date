@@ -129,8 +129,9 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 ## Testing
 
-`scripts/check_db.py` is the current safety net — 16 checks against the real database. It is not
-a substitute for a test framework but it catches the things that matter most.
+`scripts/check_db.py` is the current safety net — 12 structural checks, or 16 with
+`--expect-import`, which also asserts the original migration numbers. It is not a substitute for
+a test framework but it catches the things that matter most.
 
 There is no pytest suite yet. When adding one, build it against a temporary SQLite file created
 from `schema.sql`, and verify against the real export rather than toy data — the edge cases that

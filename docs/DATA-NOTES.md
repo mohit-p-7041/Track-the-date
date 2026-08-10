@@ -23,7 +23,7 @@ different product names. That's better than most real-world imports.
 
 ## After import, as at 10 Aug 2026
 
-| Band | Batches |
+| Group | Batches |
 |---|---|
 | Already expired (imported as `pulled`) | 583 |
 | Due within 7 days | 62 |
