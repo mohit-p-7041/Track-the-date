@@ -162,7 +162,9 @@ there is no shutdown procedure.
 1. **HTTPS via mkcert** — required for iPad camera scanning. Safari refuses camera access over
    plain `http://` from a network address.
 2. **Reserve the laptop's IP** on the router, so the iPad bookmarks survive between sessions.
-3. **Stop the laptop sleeping mid-session** — including "do nothing" when the lid closes.
+3. **Stop the laptop idle-sleeping mid-session** — set "put my device to sleep after" to Never
+   while plugged in. During a session nobody touches the laptop, so Windows will otherwise sleep
+   it and drop every iPad. Leave the lid settings alone; closing the lid is a fine way to finish.
 4. **Copy `data/backups` off the machine.** Backups run automatically on startup, but they land
    on the same disk as the original. Point them at OneDrive or a USB stick.
 

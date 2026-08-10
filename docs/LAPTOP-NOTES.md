@@ -24,8 +24,9 @@ photo library will want around 1.5 GB, and Windows needs headroom for updates. I
 about 20 GB, clear it out. The 5.54 GB of temporary files showing in Storage settings is free to
 reclaim any time via Settings → System → Storage → Temporary files.
 
-**What will actually take this app down is not the hardware.** It's the laptop going to sleep, or
-Windows rebooting for an update mid-shift. Both are fixable, and both are below.
+**What will actually take this app down is not the hardware.** It's the laptop idle-sleeping
+during a scan session, because all the activity is on the iPads and Windows sees an untouched
+machine. One setting fixes it, below.
 
 ## Before you install anything
 
@@ -43,28 +44,42 @@ That removes several things this document used to call for — no NSSM service, 
 boot, no keeping the machine awake around the clock. It also means **backups run when the app
 starts**, not overnight, because an overnight job would never fire.
 
-The settings below still matter, but only for the length of a session: you don't want the screen
-sleeping while someone is halfway through a shelf.
+Only one power setting still matters, and it isn't the lid.
 
-## Stop it going to sleep mid-session
+## Idle sleep is the one real problem
 
-If the laptop sleeps while staff are scanning, every iPad loses the app until it wakes. Nothing
-is lost — saved items are already on disk — but it interrupts the session.
+**This is the trap.** During a scan session, all the activity is on the iPads. Nobody touches the
+laptop's keyboard or trackpad for twenty minutes at a stretch. Windows has no idea the app is
+busy serving requests — it sees an idle machine and puts it to sleep. Every iPad drops out
+mid-session.
 
-**Power mode** — Settings → System → Power & battery → Power mode → **Best performance** when
-plugged in.
+Fix it in one place:
 
-**Screen and sleep** — Settings → System → Power & battery → Screen and sleep. Set **both**
-"When plugged in, turn off my screen after" and "When plugged in, put my device to sleep after"
-to **Never**.
+**Settings → System → Power & battery → Screen and sleep.** Set **"When plugged in, put my device
+to sleep after"** to **Never**.
 
-**Lid closing** — this one isn't in Settings. Control Panel → Hardware and Sound → Power Options →
-**Choose what closing the lid does** → set "When I close the lid" to **Do nothing** for
-Plugged in.
+Leave the *screen* timeout alone — the screen going dark is fine and saves the panel. It's the
+machine sleeping that kills the app.
 
-Without that last step, closing the lid at the end of a shift kills the app even with sleep
-disabled. If the laptop is going to sit closed on a shelf, also confirm it isn't overheating —
-an A515 with a blocked vent will throttle.
+Optionally set Power mode to **Best performance** while plugged in. Not required; this workload
+is trivial for an i5.
+
+## Closing the lid is fine
+
+**Leave the lid settings at their default.** Don't change "Choose what closing the lid does".
+
+With the app running on demand, closing the lid *is* the natural way to end a session. The
+laptop sleeps, the app stops, and everything staff saved is already on disk. Nothing is lost and
+nothing needs doing. Next session, open it and double-click `start.bat` again.
+
+An earlier version of this document told you to set the lid to "Do nothing". That was written
+when the plan was an always-on server, and it is now actively wrong — it would leave the laptop
+awake on a shelf with a blocked vent, burning battery for no reason.
+
+The only case worth a thought: someone closes the lid while a colleague is still scanning on an
+iPad. In practice the laptop sits open on the counter during a session, and whoever closes it can
+see the app window on screen. If it turns out to be a recurring annoyance, revisit it then —
+don't pre-configure around a problem you haven't had.
 
 ## Windows Update
 
