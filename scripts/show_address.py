@@ -1,14 +1,15 @@
 """Print the address staff should type into an iPad.
 
-Finds the laptop's address on the shop WiFi. Called by start.bat so nobody has
-to run ipconfig and read through adapter output.
+Called by start.bat so nobody has to run ipconfig and read adapter output.
+
+    python scripts/show_address.py                 # http on 8000
+    python scripts/show_address.py https 8443      # once certificates exist
 """
 
 from __future__ import annotations
 
 import socket
-
-PORT = 8000
+import sys
 
 
 def lan_ip() -> str | None:
@@ -29,19 +30,33 @@ def lan_ip() -> str | None:
         s.close()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    scheme = sys.argv[1] if len(sys.argv) > 1 else "http"
+    port = sys.argv[2] if len(sys.argv) > 2 else "8000"
     ip = lan_ip()
+
     print()
-    print("   On this laptop:   http://localhost:%d" % PORT)
+    print(f"   On this laptop:   {scheme}://localhost:{port}")
+
     if ip:
-        print("   On an iPad:       http://%s:%d" % (ip, PORT))
-        print()
-        print("   Bookmark that on each iPad and add it to the home screen.")
-        print("   If it stops working, the address may have changed — reserve")
-        print("   it on the router to stop that happening.")
+        print(f"   On an iPad:       {scheme}://{ip}:{port}")
     else:
         print()
-        print("   Could not find a network address. The laptop may be offline,")
-        print("   or on a network that blocks this. iPads will not be able to")
-        print("   connect until it is on the shop WiFi.")
+        print("   No network address found. The laptop may be offline or on a")
+        print("   network that blocks this. iPads cannot connect until it is")
+        print("   on the shop WiFi.")
+
     print()
+    if scheme == "http":
+        print("   Running without certificates. Everything works except the")
+        print("   iPad camera — Safari will not open a camera over http from a")
+        print("   network address. Set up mkcert when you need aisle scanning.")
+    else:
+        print("   Bookmark that on each iPad and add it to the home screen.")
+        print("   If it stops working the address may have changed — reserve")
+        print("   it on the router to stop that happening.")
+    print()
+
+
+if __name__ == "__main__":
+    main()

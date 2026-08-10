@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Due{% endblock %}
+
+{% macro batch_list(rows) %}
+  <ul class="items">
+    {% for r in rows %}
+      <li class="item">
+        {% if r.image_path %}
+          <img class="thumb" src="/{{ r.image_path }}" alt="">
+        {% else %}
+          <span class="thumb thumb-empty" aria-hidden="true"></span>
+        {% endif %}
+        <span class="item-body">
+          <span class="item-date">{{ r.expiry_date | au_date }}</span>
+          <span class="item-name">{{ r.name }}</span>
+          <span class="item-meta">
+            {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
+          </span>
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endmacro %}
+
+{% block content %}
+
+  {% if overdue %}
+    <h2 class="head head-overdue">Past date &mdash; {{ overdue | length }}</h2>
+    {{ batch_list(overdue) }}
+  {% endif %}
+
+  <h2 class="head">Due within {{ window }} days &mdash; {{ due | length }}</h2>
+  {% if due %}
+    {{ batch_list(due) }}
+  {% else %}
+    <p class="empty">Nothing due in the next {{ window }} days.</p>
+  {% endif %}
+
+  <p class="foot">
+    {{ total_products }} products, {{ total_live }} being tracked.
+    {{ today | au_date }}
+  </p>
+
+{% endblock %}

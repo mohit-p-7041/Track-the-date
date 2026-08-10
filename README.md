@@ -5,68 +5,65 @@ Expiry tracker for BP Tecoma. Runs on one shop laptop, reachable from iPads on t
 - `SPEC.md` — what we're building and why
 - `CLAUDE.md` — working rules, read automatically by Claude Code
 - `docs/DATA-NOTES.md` — what's in the old app's export
-- `docs/LAPTOP-NOTES.md` — the shop machine: sleep settings, firewall, backups
+- `docs/LAPTOP-NOTES.md` — the shop machine: power settings, firewall, backups
+
+## What already works
+
+Not a blank slate. Done and verified:
+
+- Database schema, with the duplicate guard enforced at index level
+- Importer — 952 products and 2,340 batches loaded from the real beep export
+- `scripts/check_db.py` — 16 checks that enforce the design decisions
+- `scripts/backup.py` — snapshot, prune to 7, restore-tested
+- `app/main.py` — a working home screen showing what's due
+
+Still to build: PIN login, scan & add, photos, search, the weekly print sheet, settings.
 
 > **Where to build:** recommend developing on the Mac and deploying to the shop laptop via git.
-> The laptop handles running the app easily, but Claude Code plus a browser plus the app on 8 GB
-> is a slow way to work. Reasoning in `docs/LAPTOP-NOTES.md`. The steps below apply to whichever
-> machine you build on; the shop laptop needs them regardless.
+> The laptop runs the app easily, but Claude Code plus a browser plus the app on 8 GB is a slow
+> way to work. Reasoning in `docs/LAPTOP-NOTES.md`.
 
 ---
 
-## Setting up the Windows laptop
+## Setup
 
-Do these once, in order. Everything after step 3 you can hand to Claude Code.
+Same steps on Mac or Windows, except where noted.
 
-### 1. Install Python
+### 1. Python 3.12
 
-Download Python 3.12 from [python.org/downloads](https://www.python.org/downloads/windows/).
+Windows: download from [python.org](https://www.python.org/downloads/windows/) and **tick "Add
+python.exe to PATH" on the first installer screen**. Miss it and every command below fails with
+`'python' is not recognized`.
 
-**On the first installer screen, tick "Add python.exe to PATH".** Miss this and every command
-below fails with `'python' is not recognized`.
-
-Check it worked — open PowerShell and run:
-
-```powershell
+```
 python --version
 ```
 
-### 2. Install Git
+### 2. Git
 
-Download [Git for Windows](https://git-scm.com/downloads/win). Accept the defaults.
+Windows: [Git for Windows](https://git-scm.com/downloads/win), accept the defaults. Claude Code
+uses Git Bash for running commands; without it, it falls back to PowerShell, which works but is
+rougher.
 
-You need this for two reasons: it's how the project gets onto the laptop, and Claude Code uses
-Git Bash for running commands. Without it Claude Code falls back to PowerShell, which works but
-is rougher.
-
-### 3. Install Claude Code
-
-In PowerShell:
+### 3. Claude Code
 
 ```powershell
-irm https://claude.ai/install.ps1 | iex
+irm https://claude.ai/install.ps1 | iex     # Windows PowerShell
 ```
 
-Then verify:
-
-```powershell
-claude --version
-claude doctor
+```bash
+curl -fsSL https://claude.ai/install.sh | bash    # macOS
 ```
 
-`claude doctor` prints a health check — read what it says before moving on.
+Then `claude --version` and `claude doctor`. Requires a Claude Pro, Max, Team or Enterprise
+account — the free plan doesn't include Claude Code.
 
-You need a Claude Pro, Max, Team or Enterprise account. The free plan does not include Claude
-Code. The first time you run `claude`, it opens a browser to log in.
-
-> If `irm` isn't recognised you're in CMD, not PowerShell. Your prompt shows `PS C:\` in
+> If `irm` isn't recognised you're in CMD, not PowerShell — the prompt shows `PS C:\` in
 > PowerShell. Either switch, or use `winget install Anthropic.ClaudeCode`.
 
 ### 4. Get the project onto the laptop
 
-This folder currently lives on your Mac. Two ways across:
-
-**Git (recommended)** — create a private repo on GitHub, push from the Mac, then on the laptop:
+**Git (recommended)** — push to a private GitHub repo from the Mac, then:
 
 ```powershell
 cd $env:USERPROFILE\Documents
@@ -74,23 +71,24 @@ git clone https://github.com/<you>/track-the-date-tecoma.git
 cd track-the-date-tecoma
 ```
 
-Worth the ten minutes. It gives you version history, so when Claude Code writes something that
-breaks the app you can roll back with one command instead of losing an afternoon.
+Worth the ten minutes. When Claude Code writes something that breaks the app, you roll back with
+one command instead of losing an afternoon.
 
-**USB stick** — copy the whole folder. Fine to start, but you're on your own for undo.
+**USB stick** also works, but you're on your own for undo.
 
-Either way, do **not** copy `data/tecoma.db` or `data/photos/` between machines casually. The
-laptop's copy is the real one once you go live.
+Don't copy `data/tecoma.db` or `data/photos/` between machines once the shop is using it — the
+laptop's copy is the real one.
 
-### 5. Install dependencies and build the database
+### 5. Dependencies and database
 
 ```powershell
 pip install -r requirements.txt
 python scripts\init_db.py
 python scripts\import_beep.py data\imports\beep_2026-08-10.xlsx
+python scripts\check_db.py --expect-import
 ```
 
-That loads all 952 products and 2340 batches from the old app.
+The last command should print **All 16 checks passed**. If it doesn't, stop and read what failed.
 
 ### 6. Run it
 
@@ -98,88 +96,91 @@ That loads all 952 products and 2340 batches from the old app.
 .\start.bat
 ```
 
-Then open `http://localhost:8000` on the laptop.
+It prints the address for the laptop and for the iPads. On the laptop, open
+`http://localhost:8000`.
+
+Close the window to stop it. Everything saved is already on disk — there's no shutdown step.
 
 ---
 
 ## Using Claude Code on this project
 
-Open PowerShell **in the project folder** and run:
+Start it **inside the project folder** so it picks up `CLAUDE.md`:
 
 ```powershell
 cd $env:USERPROFILE\Documents\track-the-date-tecoma
 claude
 ```
 
-Starting it inside the project folder matters — that's how it picks up `CLAUDE.md`, which tells
-it the design decisions so it doesn't reinvent them.
+### Two commands are set up for you
+
+- `/feature <name>` — builds one feature properly: reads the spec, shows you a plan first, runs
+  the checks after
+- `/verify` — runs `check_db.py` and reports what passed
 
 ### The workflow that works
 
-Ask for one screen or one feature at a time, then test it in the browser before moving on. The
-spec is already written, so you can point at it:
+Ask for one screen at a time and test it before moving on:
 
-> Read SPEC.md and CLAUDE.md. Build the scan-and-add screen described in section 3, including
-> the duplicate check. Don't touch anything else yet.
+> /feature scan and add screen from SPEC.md section 3, including the duplicate check
 
-Then, once it's working:
-
-> Now the home screen dashboard with the colour-coded bands.
-
-Asking for the whole app in one go produces a lot of code you haven't tested, and debugging it is
-slower than building it piece by piece.
+Then once it's working, commit, `/clear`, and do the next one. Asking for the whole app at once
+produces a lot of code you haven't tested, and debugging that is slower than building it in
+pieces.
 
 ### Useful things to know
 
-- `/clear` starts a fresh conversation. Do this between features — it keeps responses sharp.
-- Claude Code asks before editing files. You can approve individual changes, or use
-  `/permissions` to let it edit `app/` freely once you trust the pattern.
-- If it's going the wrong direction, press Escape and redirect. Don't let it finish something
-  wrong out of politeness.
-- `git commit` after every feature that works. This is your undo button.
+- **Plan mode** — `Shift+Tab` twice. Use it for anything non-trivial; getting a plan before code
+  is the single biggest time saver.
+- `/clear` between features. A long conversation carries stale context and answers get worse.
+- `git commit` after every feature that works. This is your real undo button.
+- Escape interrupts and redirects. Don't let it finish something wrong out of politeness.
+- Make it *show* you the page rendered, not just claim it works.
 - `claude doctor` diagnoses installation problems.
 
-### Things to tell it not to do
+### Push back if you see these
 
-`CLAUDE.md` already covers this, but if you see it happening, push back:
+`CLAUDE.md` forbids them, but habits are strong:
 
-- Adding React, Vue, npm or a build step
-- Linking to CDN-hosted CSS or JavaScript (the app must work offline)
+- React, Vue, npm, or any build step
+- CDN links for CSS or JavaScript — the app must work with the internet down
 - Dropping the duplicate-prevention index to make an insert work
+- "Tidying" the messy product names — `C/RIDGE WATER 1L` stays exactly as it is
 - Storing images as base64 in the database
+- Adding an admin or manager tier — there are no roles
+- `strftime('%-d')` for dates — doesn't exist on Windows
 
 ---
 
 ## Going live in the shop
 
-Not needed for development, but this is what makes it real. Full detail with the exact Windows
-settings is in `docs/LAPTOP-NOTES.md`.
+Full detail with exact Windows settings in `docs/LAPTOP-NOTES.md`.
 
-The app runs **on demand**, not as an always-on server. Someone double-clicks `start.bat` at the
-start of a scan session and closes the window at the end. Everything saved is already on disk;
-there is no shutdown procedure.
-
-1. **HTTPS via mkcert** — required for iPad camera scanning. Safari refuses camera access over
-   plain `http://` from a network address.
-2. **Reserve the laptop's IP** on the router, so the iPad bookmarks survive between sessions.
-3. **Stop the laptop idle-sleeping mid-session** — set "put my device to sleep after" to Never
-   while plugged in. During a session nobody touches the laptop, so Windows will otherwise sleep
-   it and drop every iPad. Leave the lid settings alone; closing the lid is a fine way to finish.
-4. **Copy `data/backups` off the machine.** Backups run automatically on startup, but they land
-   on the same disk as the original. Point them at OneDrive or a USB stick.
+1. **Stop the laptop idle-sleeping mid-session** — Settings → System → Power & battery → Screen
+   and sleep → "When plugged in, put my device to sleep after" → **Never**. During a session
+   nobody touches the laptop, so Windows would otherwise sleep it and drop every iPad. Leave the
+   lid settings alone; closing the lid is a fine way to finish.
+2. **HTTPS via mkcert** — only needed for iPad camera scanning. Everything else works over HTTP.
+3. **Reserve the laptop's IP** on the router so the iPad bookmarks survive between sessions.
+4. **Copy `data/backups` off the machine** — they run automatically at startup but land on the
+   same disk as the original.
 
 ---
 
 ## Troubleshooting
 
-**`'python' is not recognized`** — Python isn't on PATH. Re-run the installer, choose Modify, and
+**`'python' is not recognized`** — Python isn't on PATH. Re-run the installer, choose Modify,
 tick "Add python.exe to PATH".
 
-**iPads can't reach the app** — check the laptop's IP with `ipconfig`, confirm both devices are on
-the same WiFi, and allow Python through Windows Firewall on private networks. Corporate or guest
-WiFi with client isolation will block this entirely.
+**iPads can't reach the app** — `start.bat` prints the address; check the iPad is on the same
+WiFi and that Python is allowed through Windows Firewall on private networks. Guest or corporate
+WiFi with client isolation blocks this entirely.
 
-**Camera won't open on the iPad** — expected over `http://`. This needs the mkcert step.
+**Camera won't open on the iPad** — expected over `http://`. Needs the mkcert step. The laptop's
+own webcam works on `localhost` regardless.
 
-**Database is locked** — something else has it open. Close other instances of the app; SQLite in
-WAL mode handles concurrent readers fine but not two writers.
+**Database is locked** — something else has it open. SQLite in WAL mode handles concurrent
+readers fine but not two writers. Close the other instance.
+
+**`check_db.py` fails after a change** — read which check failed and fix the cause. Each one maps
+to a decision in `SPEC.md`. Don't weaken the check to make it pass.

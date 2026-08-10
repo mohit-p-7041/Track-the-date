@@ -1,6 +1,9 @@
 # Track the Date — Tecoma
 
-Local expiry-date tracker for BP Tecoma. Replaces the current paid app.
+Local expiry-date tracker for BP Tecoma. Replaces a paid app ("beep") whose plan lapsed in
+May 2026.
+
+This is the agreed design. `CLAUDE.md` holds the working rules for building it.
 
 ---
 
@@ -15,48 +18,61 @@ One Windows laptop in the shop runs everything. No cloud, no hosting, no monthly
       │                        (USB scanner gun plugged in at the counter)
       │
       ├── iPad  ──┐
-      ├── iPad  ──┤  open https://192.168.x.x:8443 in Safari
+      ├── iPad  ──┤  open the laptop's address in Safari
       └── Phone ──┘  (added to home screen, looks like a native app)
 ```
 
-- Everything lives on the laptop: one SQLite database file + one photos folder.
+- Everything lives on the laptop: one SQLite database file and one photos folder.
 - iPads are just browsers pointed at the laptop. Nothing installed, nothing synced.
 - If the laptop is off, nothing works. That's the trade for zero hosting cost.
-
-### HTTPS is required (not optional)
-
-Safari refuses camera access over plain `http://` from a network address. Since we want
-camera scanning on the iPads, the app is served over HTTPS from day one using **mkcert**:
-
-1. Generate a local certificate on the laptop, valid for its IP address.
-2. Install the mkcert root certificate on each iPad (~2 min each, one time).
-   Settings → Profile Downloaded → Install, then General → About → Certificate Trust
-   Settings → toggle it on.
-3. Done. No warnings, camera works.
 
 ### Operating model: on demand, not always on
 
 The laptop is not a server and won't be treated as one. Staff scan in sessions, mainly on the
 weekend, so the app runs when it's wanted:
 
-- Double-click `start.bat`. It prints the address for the iPads and comes up in about two seconds.
+- Double-click `start.bat`. It backs up, prints the address for the iPads, and comes up in about
+  two seconds.
 - Use it. Close the window when done.
-- Everything saved is already on the disk. There is no shutdown procedure.
+- Everything saved is already on disk. There is no shutdown procedure.
 
-**This deletes work rather than adding it.** No NSSM service, no auto-start on boot, no
-always-awake configuration. Sleep and lid settings only matter for the length of a session.
+**This removes work rather than adding it.** No service to install, no auto-start on boot, no
+always-awake configuration.
 
 Two consequences worth holding onto:
 
-**Backups run on startup, not overnight.** A nightly scheduled job would never fire on a machine
-that is off overnight. `start.bat` calls `scripts/backup.py` every time the app comes up.
+**Backups run at startup, not overnight.** A nightly scheduled job would never fire on a machine
+that's off overnight. `start.bat` calls `scripts/backup.py` every time the app comes up.
 
 **Nothing can be recorded while the app is down.** If someone spots a short-dated item on a
 Tuesday it isn't captured unless they bring the app up. Starting it is one double-click, so this
-is habit rather than architecture — but it is a real gap, and if it bites often that's the signal
-to run it always-on after all.
+is habit rather than architecture — but it's a real gap, and if it bites often that's the signal
+to reconsider always-on.
 
-Still worth doing: reserve the laptop's IP on the router, so the iPad bookmarks survive between
+### Addresses and HTTPS
+
+`start.bat` picks its mode automatically:
+
+| | Address | Camera on iPad |
+|---|---|---|
+| No certificates (default) | `http://<laptop-ip>:8000` | No |
+| Certificates present | `https://<laptop-ip>:8443` | Yes |
+
+Safari refuses camera access over plain `http://` from a network address, so aisle scanning on
+an iPad needs HTTPS. Everything else — browsing, searching, entering dates, the print sheet —
+works fine over HTTP, and the laptop's own webcam works on `localhost` either way.
+
+So HTTP is correct for development, and HTTPS is a week-3 task, not a prerequisite. To switch:
+
+```
+mkcert -key-file certs\key.pem -cert-file certs\cert.pem <laptop-ip>
+```
+
+Then install the mkcert root certificate on each iPad — Settings → Profile Downloaded → Install,
+then General → About → Certificate Trust Settings → toggle it on. About two minutes per iPad,
+once. `start.bat` detects the certificates and switches by itself.
+
+Also worth doing: reserve the laptop's IP on the router so the iPad bookmarks survive between
 sessions.
 
 ---
@@ -70,35 +86,38 @@ forever. A Batch is one expiry date for that product.
 
 This matters for three reasons:
 
-- **Photos stored once per barcode, not per date.** Your 2343 entries are probably ~400 unique
-  products. Six times less image storage.
-- **Duplicate prevention becomes a database rule.** Unique constraint on (product + expiry date).
-  Scan a pair that already exists and the app says *"Already tracked, expires 25 May — add to
-  quantity instead?"* rather than silently creating a twin.
-- **Scanning gets fast.** Known barcode auto-fills name, category and photo. Staff enter only the
-  date. Three seconds instead of fifteen.
+- **Photos are stored once per barcode, not once per date.** The export holds 2,343 entries
+  across 952 unique products — about 2.5 batches per product, and far more for fast movers.
+  Storing photos per product rather than per entry cuts image storage by roughly 60%, and makes
+  it plateau instead of growing forever.
+- **Duplicate prevention becomes a database rule.** A unique index on (product, expiry date) for
+  live rows. Scan a pair that already exists and the app says *"Already tracked — expires
+  25 May"* rather than silently creating a twin.
+- **Scanning gets fast.** A known barcode auto-fills name, category and photo. Staff enter only
+  the date.
 
 ### Tables
 
 | Table | Fields |
 |---|---|
-| `users` | id, name, pin_hash, pin_salt, active |
-| `categories` | id, name, sort_order, active |
+| `users` | id, name, pin_hash, pin_salt, active, created_at |
+| `categories` | id, name, sort_order, active, created_at, created_by |
 | `products` | id, **barcode (unique)**, name, category_id, image_path, created_at, created_by |
-| `batches` | id, product_id, expiry_date, note, status, added_by, added_at, resolved_by, resolved_at |
-| `settings` | key, value (expiry window, shop name, image settings) |
+| `batches` | id, product_id, expiry_date, quantity, note, status, added_by, added_at, resolved_by, resolved_at |
+| `settings` | key, value |
 
-`batches` carries a unique index on (product_id, expiry_date) for live rows — that is the
-duplication guard.
+`idx_batches_unique_live` is a partial unique index on (product_id, expiry_date) covering only
+`active` and `discounted` rows. That's the duplication guard. Resolved rows are excluded so a
+date can recur once the earlier batch is dealt with.
 
 Batch `status` is one of `active`, `discounted`, `pulled`, `sold`. Nothing is hard-deleted by
-default, so you keep a record of what actually got wasted vs. sold down.
+default, so waste can be reviewed later.
 
 ### No counting
 
 The shop does not track how many of a thing it has. A second Redbull Zero 250ml is entered only
-if its expiry date differs from one already recorded. So a batch is a fact — "this product has
-stock dying on this date" — not a quantity.
+if its expiry date differs from one already recorded. A batch is a fact — "this product has stock
+dying on this date" — not a quantity.
 
 This is why the duplicate rule is the whole data model rather than a validation nicety. The
 schema keeps a `quantity` column defaulting to 1 in case the manager later wants counts, but it
@@ -118,34 +137,42 @@ features. Don't build an admin tier.
 ## 3. Screens
 
 1. **PIN login** — big number pad, pick your name, four digits.
-2. **Home** — what's due. Expired, then due within 7 days, then everything upcoming. Filter by
-   category.
+2. **Home** — what's due. Anything past its date first, then anything due within 7 days. Filter
+   by category.
 3. **Scan & Add** — the main workflow.
    - Counter (laptop): USB scanner gun fires the barcode straight into the field.
    - Aisle (iPad): camera scanner.
    - Known barcode → name, category, photo pre-filled, cursor lands on the date.
-   - Unknown barcode → new product form, take a photo, pick category, enter date.
+   - Unknown barcode → new product form, optional photo, optional category, enter date.
 4. **Product list** — search by name or barcode, filter by category, sort by soonest expiry.
 5. **Product detail** — photo, all batches for that barcode, history.
-6. **Weekly discount sheet** — the printable. See below.
-7. **Settings** — categories, staff PINs, backup, Excel export. Open to everyone.
+6. **Weekly discount sheet** — the printable. See section 4.
+7. **Settings** — categories, staff PINs, backup. Open to everyone.
+
+### One window: 7 days
+
+A single threshold, not a set of bands. Within 7 days is due; beyond it is upcoming. Stored as
+`expiry_window_days` so it can change without touching code.
+
+Items past their date but not yet resolved are a normal, expected state — they sit at the top of
+the home screen until someone deals with them. Don't treat them as an error condition.
 
 ### Categories grow themselves
 
-There is no categorisation project, and no seeded list. The categories table starts empty.
+There is no categorisation project and no seeded list. The categories table starts empty.
 
 When staff scan a product they can pick an existing category or type a new one. That choice
 attaches to the **product**, so it covers every batch of that barcode — past and future — and is
 never asked again. Category is optional; an uncategorised product is a normal, valid state and
-just shows blank.
+shows blank.
 
 The useful consequence: the products staff scan most get categorised first. Monster Ultra Zero
 has 31 batches in the export, so one person typing "Energy Drinks" once covers all 31. The
-catalogue sorts itself in order of how much it matters, at zero migration cost. The long tail of
-products nobody touches stays uncategorised, and that's fine — nobody was looking for them.
+catalogue sorts itself in order of how much it matters, at zero migration cost. The long tail
+nobody touches stays uncategorised, and nobody was looking for it.
 
 Because ten people are typing freely, the categories table has a **case-insensitive unique
-index**. Without it you get "Drinks", "drinks" and "DRINKS" inside a week. The category input
+index**. Without it you get "Drinks", "drinks" and "DRINKS" within a week. The category input
 should also suggest existing categories as you type, so people pick rather than invent.
 
 ### Photos backfill the same way
@@ -153,8 +180,8 @@ should also suggest existing categories as you type, so people pick rather than 
 Products start with no photo. When someone adds one it attaches to the barcode, so it
 immediately appears everywhere that product shows up, including batches recorded months ago.
 
-Photo is never required. Nothing in the add path waits for a camera. Lists show a neutral
-placeholder where there's no image yet, and must not reflow or jump when photos appear later.
+A photo is never required. Nothing in the add path waits for a camera. Lists show a fixed-size
+placeholder where there's no image yet and must not reflow when photos appear later.
 
 ### UI principles
 
@@ -167,57 +194,51 @@ app can be plain.
 Deliberately **not** captured: shelf location, aisle, fridge number. Staff know where things are,
 and the field would only slow entry down.
 
-### One window: 7 days
-
-There is a single threshold, not a set of bands. Within 7 days is due; beyond it is upcoming.
-Stored as `expiry_window_days` so it can change without touching code.
-
 ---
 
 ## 4. Weekly discount sheet
 
 Printed on the weekend, covering the week ahead.
 
-- Pulls every batch expiring in the next 7 days (date range adjustable before printing).
+- Every batch expiring in the next 7 days (range adjustable before printing).
 - Grouped by category, sorted by date within each group.
 - One line per item: tick box, product name, expiry date, barcode, blank column for the
   discount price.
 - Clean A4 print layout — no navigation, no colours that eat toner.
 - Staff walk the aisles with paper, tick items off, then mark them discounted in the app after.
 
-The same information is always on the home screen, live. The print is for the aisle walk.
+The same information is always live on the home screen. The print is for the aisle walk.
 
 ---
 
 ## 5. Images
 
 - Captured from the iPad camera or laptop webcam, or uploaded from a file.
-- Shrunk **in the browser before upload** (canvas resize) so we're not pushing 4MB over the shop
-  WiFi for every product.
-- Server side: Pillow resizes to max 800px on the long edge, JPEG quality ~72, EXIF stripped.
-  Lands around 50–70KB per photo.
-- Stored as files in a `photos/` folder, filename keyed to the barcode. Not in the database —
-  keeps the database small and easy to back up or inspect.
-- **Estimated total: ~25–35MB** for the whole product catalogue.
+- Shrunk **in the browser before upload** (canvas resize), so we're not pushing 4 MB over the
+  shop WiFi per product.
+- Server side: Pillow resizes to max 800px on the long edge, JPEG quality 72, EXIF stripped.
+  Lands around 50–70 KB.
+- Stored as files in `data/photos/`, filename keyed to the barcode. Not in the database — that
+  keeps the database tiny and easy to back up.
+
+**Expected total: around 57 MB** at 952 products, rising to perhaps 90 MB as the catalogue grows,
+then flattening. Storing per entry instead would pass 550 MB within three years and keep going.
 
 ---
 
-## 6. Migration from the current app
+## 6. Migration from the old app
 
-Your existing app has Settings → Export to Excel. That export is the starting point.
+**Done and verified.** The export is at `data/imports/beep_2026-08-10.xlsx` and
+`scripts/import_beep.py` loads it. See `docs/DATA-NOTES.md` for the full picture.
 
-**Done.** The export is at `data/imports/beep_2026-08-10.xlsx` and the importer works — see
-`docs/DATA-NOTES.md` for verified numbers.
+- 2,343 rows → 952 products and 2,340 batches. 0 rows skipped.
+- 3 rows were exact duplicates and collapse into single batches.
+- All products import with no category — the old app only ever had one ('All').
+- 583 already-expired batches import as `pulled`, noted *"Expired before migration — not
+  verified"*, with `resolved_by` left empty because nobody actually confirmed them.
 
-- 952 products, 2,340 batches, 0 rows skipped.
-- All products import with no category.
-- 583 already-expired batches import as `pulled`, with a note saying they expired before the
-  migration and were never verified. `resolved_by` is left empty — nobody confirmed them, so no
-  name goes against them.
-
-Those 583 are stale records; the stock left the shelves long ago and nobody cleared the entries.
-They stay out of the daily view but remain in the history, and staff clear the backlog naturally
-as they rescan products over the coming weeks. No cleanup session needed.
+Those 583 are stale records; the stock left the shelves long ago and only the entries lingered.
+They stay out of the daily view but remain in history. No cleanup session needed.
 
 Photos can't come across in an Excel export. They rebuild naturally, one per barcode.
 
@@ -225,15 +246,17 @@ Photos can't come across in an Excel export. They rebuild naturally, one per bar
 
 ## 7. Backups
 
-The whole system is one `.db` file plus a `photos/` folder. That makes backup trivial:
+The whole system is one `.db` file plus a `photos/` folder, which makes backup trivial.
 
-- Nightly automatic zip of both into a backup folder, keeping the last 7.
-- Point that folder at OneDrive or a USB stick and you have an off-machine copy.
-- Manual "Download backup" button in Admin for before any risky change.
-- Excel export button as a second, human-readable safety net.
+`scripts/backup.py` runs automatically every time `start.bat` starts the app:
 
-This is worth taking seriously — with no cloud, a dead laptop means a dead database unless the
-backup is running.
+- Snapshots the database using SQLite's own backup API, so it's safe even while the app is
+  serving requests.
+- Copies photos that are new or changed, so it stays cheap after the first run.
+- Keeps the last 7 snapshots. The database is around 450 KB, so seven copies cost about 3 MB.
+
+**These land on the same disk as the original.** That protects against a mistake, not a dead
+drive. Copy `data/backups` to OneDrive or a USB stick. Test a restore before trusting it.
 
 ---
 
@@ -242,7 +265,7 @@ backup is running.
 | Piece | Choice | Why |
 |---|---|---|
 | Server | Python 3.12 + FastAPI + uvicorn | One `start.bat`, no build step |
-| Database | SQLite (WAL mode) | Single file, zero admin, easy backup |
+| Database | SQLite (WAL, `synchronous=FULL`) | Single file, zero admin, survives a flat battery |
 | Frontend | Plain HTML + CSS + JS, Jinja2 templates | No framework, no npm, nothing to break in a year |
 | Barcode (camera) | ZXing-js, vendored locally | Works offline, no CDN dependency |
 | Images | Pillow | Reliable on Windows |
@@ -255,33 +278,31 @@ Deliberately boring. In eighteen months someone needs to be able to open this an
 
 ## 9. Timeline
 
-One month available. Database, schema and import are done.
+One month. Database, schema, importer, backup and checks are already done and verified.
 
 | Week | Work |
 |---|---|
 | 1 | PIN login, scan & add with duplicate check, home screen, inline categories |
 | 2 | Photos + compression, weekly print sheet, search, settings |
 | 3 | HTTPS + iPad certificates, first real weekend scan session with staff |
-| 4 | Fixes from real-world use, Excel export, training notes |
+| 4 | Fixes from real use, Excel export, training notes |
 
-Week 3 got lighter when the app became on-demand: no service install, no boot configuration.
-The backup script is already written and runs on startup.
-
-A usable v1 should exist by the end of week 2. Weeks 3–4 are what turn it from "works on my
-machine" into something the shop actually relies on.
+A usable v1 should exist by the end of week 2. Weeks 3–4 turn it from "works on my machine" into
+something the shop relies on. Keep week 4 genuinely empty — the first staff session always
+surfaces something.
 
 ### Deferred, deliberately
 
-- **Excel export.** Wanted, but not needed to go live — the startup backup already protects the
-  data, and the old app remains readable. Week 4.
+- **Excel export.** Wanted, not needed to go live — the startup backup already protects the data.
+  Week 4.
 - **Quantity per batch.** Column exists at 1, hidden. Pending the manager's view.
-- **Bulk categorisation screen.** Not being built. Categories now grow through normal scanning.
+- **Bulk categorisation screen.** Not being built. Categories grow through normal scanning.
 
 ---
 
-## 10. Settled and outstanding
+## 10. Settled
 
-Answered 10 Aug 2026:
+All answered 10 Aug 2026.
 
 | Question | Answer |
 |---|---|
@@ -289,15 +310,17 @@ Answered 10 Aug 2026:
 | Quantity | Not tracked. One batch per product + date. |
 | Shelf location | Not captured — adds friction, staff know the shop. |
 | Roles | None. ~10 staff, everyone can do everything. |
-| Laptop | Acer Aspire A515-51G, Windows 11 Home. See `docs/LAPTOP-NOTES.md`. |
-| UI | Clean, fast, no animation. |
-
 | Categories | No fixed list. Created inline while scanning, optional, attached to the barcode. |
 | Expired backlog | Left as-is with a migration note. Cleared naturally, no cleanup session. |
 | Photos | Optional, added over time, attached to the barcode so they backfill. |
+| Scanning | Both — USB gun at the counter, iPad camera in the aisles. |
+| Alerts | No email. Home screen plus a printable weekly sheet. |
 | Excel export | Wanted, deferred to week 4. |
+| Operating model | On demand. `start.bat` for a session, close the window after. |
+| Laptop | Acer Aspire A515-51G, Windows 11 Home. See `docs/LAPTOP-NOTES.md`. |
+| UI | Clean, fast, no animation. |
 
-Still outstanding:
+### Still open
 
 1. **Where development happens** — recommend building on the Mac and deploying to the laptop by
    git. See `docs/LAPTOP-NOTES.md`.

@@ -10,6 +10,8 @@ Acer Aspire A515-51G — `LAPTOP-S65BPC8C`
 | Graphics | NVIDIA MX130 2 GB + Intel UHD 620 |
 | OS | Windows 11 Home, 25H2, build 26200.8875 |
 
+Screenshots of these settings are in `docs/reference/laptopinformationreferenceimages/`.
+
 ## Is it enough?
 
 Yes, comfortably, and it isn't close.
@@ -36,15 +38,15 @@ trading hours.
 
 ## The app runs on demand
 
-Decided 10 Aug 2026: this laptop is **not** a always-on server. Staff scan in sessions, mainly on
-the weekend. Someone double-clicks `start.bat`, the app comes up in about two seconds, and the
-window gets closed when the session is done.
+This laptop is **not** an always-on server. Staff scan in sessions, mainly on the weekend.
+Someone double-clicks `start.bat`, the app comes up in about two seconds, and the window gets
+closed when the session is done.
 
-That removes several things this document used to call for — no NSSM service, no auto-start on
-boot, no keeping the machine awake around the clock. It also means **backups run when the app
-starts**, not overnight, because an overnight job would never fire.
+That means no service to install, no auto-start on boot, and no keeping the machine awake around
+the clock. It also means **backups run when the app starts**, not overnight — an overnight job
+would never fire on a machine that's switched off.
 
-Only one power setting still matters, and it isn't the lid.
+Only one power setting matters, and it isn't the lid.
 
 ## Idle sleep is the one real problem
 
@@ -72,13 +74,13 @@ With the app running on demand, closing the lid *is* the natural way to end a se
 laptop sleeps, the app stops, and everything staff saved is already on disk. Nothing is lost and
 nothing needs doing. Next session, open it and double-click `start.bat` again.
 
-An earlier version of this document told you to set the lid to "Do nothing". That was written
-when the plan was an always-on server, and it is now actively wrong — it would leave the laptop
-awake on a shelf with a blocked vent, burning battery for no reason.
+**Do not set the lid to "Do nothing"** — that's the right setting for an always-on server and the
+wrong one here. It would leave the laptop awake on a shelf with a blocked vent, burning battery
+for nothing.
 
 The only case worth a thought: someone closes the lid while a colleague is still scanning on an
 iPad. In practice the laptop sits open on the counter during a session, and whoever closes it can
-see the app window on screen. If it turns out to be a recurring annoyance, revisit it then —
+see the app window on screen. If that turns out to be a recurring annoyance, revisit it then —
 don't pre-configure around a problem you haven't had.
 
 ## Windows Update
@@ -97,8 +99,8 @@ again. Set active hours anyway so an update doesn't restart the machine mid-sess
 
 ## Let the iPads reach it
 
-**Find the address** — open PowerShell and run `ipconfig`. Look for IPv4 Address under your WiFi
-adapter, something like `192.168.1.42`.
+**The address is printed for you.** `start.bat` runs `scripts/show_address.py` on startup and
+displays both the laptop URL and the iPad URL. No need to read `ipconfig` output.
 
 **Reserve it on the router** so it doesn't change. Otherwise the iPad bookmarks break the next
 time the router reassigns addresses, usually on a day when you're busy.
