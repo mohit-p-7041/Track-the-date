@@ -31,7 +31,9 @@ def main() -> int:
     ap.add_argument("--reset", action="store_true", help="delete the existing database first")
     args = ap.parse_args()
 
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # These are gitignored, so a fresh clone won't have them.
+    for d in ("photos", "backups", "imports"):
+        (ROOT / "data" / d).mkdir(parents=True, exist_ok=True)
 
     if DB_PATH.exists():
         if not args.reset:

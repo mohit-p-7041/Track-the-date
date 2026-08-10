@@ -214,13 +214,26 @@ def main() -> int:
             product_ids[barcode] = cur.lastrowid
 
         created = 0
+        already = 0
         for (barcode, expiry), info in pairs.items():
             status = "pulled" if dt.date.fromisoformat(expiry) < today else "active"
+
+            # Can't lean on INSERT OR IGNORE here: the unique index is partial
+            # (live rows only) by design, so re-importing would duplicate every
+            # already-expired batch. Check explicitly, whatever the status.
+            exists = conn.execute(
+                "SELECT 1 FROM batches WHERE product_id = ? AND expiry_date = ?",
+                (product_ids[barcode], expiry),
+            ).fetchone()
+            if exists:
+                already += 1
+                continue
+
             added_at = info["added_at"]
             added_at = (added_at.isoformat(sep=" ", timespec="seconds")
                         if isinstance(added_at, dt.datetime) else None)
             conn.execute(
-                """INSERT OR IGNORE INTO batches
+                """INSERT INTO batches
                    (product_id, expiry_date, quantity, note, status, added_by, added_at,
                     resolved_at)
                    VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)""",
@@ -236,6 +249,8 @@ def main() -> int:
             "SELECT COUNT(*) FROM batches WHERE status IN ('active','discounted')"
         ).fetchone()[0]
         print(f"\nWrote {len(product_ids)} products and {created} batches.")
+        if already:
+            print(f"  {already} batches already existed and were left alone")
         print(f"  live batches now on the home screen: {live}")
         print(f"\nAll staff PINs are set to {PLACEHOLDER_PIN} — change these before go-live.")
         print("All products are in 'Uncategorised' — the old app had no real categories.")
