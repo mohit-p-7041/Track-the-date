@@ -247,7 +247,7 @@ backup is running.
 | Barcode (camera) | ZXing-js, vendored locally | Works offline, no CDN dependency |
 | Images | Pillow | Reliable on Windows |
 | Certificates | mkcert | Makes iPad camera access work |
-| Service | NSSM | Starts on boot, restarts on crash |
+| Launcher | `start.bat` | Double-click to run a session; no service needed |
 
 Deliberately boring. In eighteen months someone needs to be able to open this and fix it.
 
@@ -272,7 +272,7 @@ machine" into something the shop actually relies on.
 
 ### Deferred, deliberately
 
-- **Excel export.** Wanted, but not needed to go live — the nightly backup already protects the
+- **Excel export.** Wanted, but not needed to go live — the startup backup already protects the
   data, and the old app remains readable. Week 4.
 - **Quantity per batch.** Column exists at 1, hidden. Pending the manager's view.
 - **Bulk categorisation screen.** Not being built. Categories now grow through normal scanning.

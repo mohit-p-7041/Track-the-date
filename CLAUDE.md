@@ -53,7 +53,7 @@ app/          FastAPI application
 data/
   tecoma.db     the database — never commit
   photos/       compressed product images — never commit
-  backups/      nightly zips — never commit
+  backups/      snapshots written at startup — never commit
   imports/      the beep Excel export
 scripts/
   init_db.py    create the database
