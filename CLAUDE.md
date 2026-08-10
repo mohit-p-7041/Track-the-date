@@ -91,6 +91,11 @@ decision genuinely changed, say so explicitly and update the check deliberately.
 - The unique index `idx_batches_unique_live` is the duplication guard. The app should catch a
   duplicate before insert and offer "add to quantity"; the index is the backstop. Never drop it.
 - Every write that a person initiates records `added_by` / `resolved_by`.
+- **Always open the database via `scripts/init_db.connect()`**, never `sqlite3.connect()` directly.
+  `foreign_keys` and `synchronous` are per-connection pragmas — a raw connect silently drops
+  both, which loses referential integrity and crash durability.
+- **Submit each entry immediately.** Don't build multi-step wizards holding state in the browser.
+  The laptop can sleep at any moment, and anything not yet posted is gone.
 - Images: resize client-side before upload, then Pillow to max 800px long edge, JPEG q72, EXIF
   stripped. Target under 80KB. Filenames keyed to barcode.
 

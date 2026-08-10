@@ -18,9 +18,21 @@ SEED = ROOT / "app" / "seed.sql"
 
 
 def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    """Open the database with the pragmas the app expects."""
+    """Open the database with the pragmas the app expects.
+
+    ALWAYS use this rather than sqlite3.connect() directly. journal_mode is a
+    property of the file, but foreign_keys and synchronous are per-connection —
+    open the file any other way and you silently lose both.
+
+    synchronous = FULL means every commit is flushed to disk before the app is
+    told it succeeded. That is what makes a closed lid or a flat battery safe:
+    anything staff have saved is already on disk, not waiting in a buffer. It
+    costs a few milliseconds per write, and this app does perhaps fifty writes
+    a day, so the trade is free.
+    """
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = FULL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
