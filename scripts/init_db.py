@@ -53,11 +53,11 @@ def main() -> int:
     conn.executescript(SEED.read_text(encoding="utf-8"))
     conn.commit()
 
-    cats = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+    settings = conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0]
     conn.close()
 
     print(f"Created {DB_PATH}")
-    print(f"  {cats} categories seeded")
+    print(f"  {settings} settings seeded, no categories (staff create those as they scan)")
     print("\nNext: python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx")
     return 0
 

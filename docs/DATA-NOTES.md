@@ -34,16 +34,23 @@ different product names. That's better than most real-world imports.
 
 ## Things worth knowing
 
-**Categories don't exist yet.** Every one of the 2,343 rows has category `All`. The old app had a
-single category, so there is nothing to migrate. All products import as `Uncategorised` and
-someone has to sort 952 products into real categories. `app/seed.sql` proposes 15 categories
-based on the actual product mix — edit that list before importing, then plan a session to
-bulk-assign. This is the largest piece of manual work in the whole migration.
+**Categories don't exist.** Every one of the 2,343 rows has category `All`. The old app had a
+single category, so there is nothing to migrate. Products import with `category_id` NULL.
+
+There is no bulk-categorisation job. Categories are created inline as staff scan, and attach to
+the barcode rather than the batch — so the products handled most get categorised first and
+cover the most rows. One person typing "Energy Drinks" against Monster Ultra Zero covers 31
+batches. The long tail nobody scans stays blank, which costs nothing.
 
 **583 expired items were never cleared.** Items dating back to 25 May 2026 were still sitting in
 the old system. Either staff stopped resolving items when the premium plan lapsed, or the
 "remove once pulled" habit never formed. Worth knowing, because a tool that accumulates stale
 rows stops being trusted — the new app should make resolving an item as fast as adding one.
+
+These import as `pulled` with the note *"Expired before migration — not verified"* and no
+`resolved_by`, because nobody actually confirmed them. The stock is long gone from the shelves;
+only the records lingered. They stay out of the daily view and get cleared naturally as staff
+rescan those products.
 
 **Three exact duplicates existed** despite the old app running a duplicate check:
 
@@ -96,4 +103,7 @@ Use `--dry-run` first to see the report without writing anything.
 **Photos.** An Excel export can't carry them. The old app had images for at least some products
 (see `docs/reference/`), but they're only retrievable through the app itself. Plan is to let them
 rebuild naturally — staff photograph products as they scan them over the following weeks. Since
-photos attach to the barcode, each product only needs shooting once.
+photos attach to the barcode, each product only needs shooting once, and once added it appears
+against every batch of that product including ones recorded before the photo existed.
+
+**Categories.** Nothing to migrate — see above.

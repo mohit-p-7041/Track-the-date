@@ -13,8 +13,13 @@ What it does with the data:
   * One batch per (barcode, expiry date) pair. The shop does not count stock —
     a second item is only recorded if its date differs — so rows that repeat a
     pair collapse into one batch rather than accumulating a quantity.
-  * Rows already past their expiry date are imported as status 'pulled' so they
-    stay in the history without cluttering the home screen.
+  * Products import with no category. The old app had only one category ('All'),
+    so there is nothing to migrate. Staff assign categories as they rescan
+    products during normal work.
+
+  * Rows already past their expiry date are imported as status 'pulled', with a
+    note recording that this was the migration and not a person. The stock is
+    long gone from the shelves; the records just never got cleared.
   * Staff named in 'Added User' are created as users so the audit trail carries
     over. They all get the same placeholder PIN — change it before go-live.
     There are no roles; everyone can do everything.
@@ -35,7 +40,7 @@ from app.security import hash_pin  # noqa: E402
 from scripts.init_db import DB_PATH, connect  # noqa: E402
 
 PLACEHOLDER_PIN = "1234"
-FALLBACK_CATEGORY = "Uncategorised"
+MIGRATION_NOTE = "Expired before migration — not verified"
 
 EXPECTED_HEADERS = ["Id", "Name", "Barcode", "Expiration Date", "Category", "Memo",
                     "Added User", "Added Date"]
@@ -181,13 +186,6 @@ def main() -> int:
     # ------------------------------------------------------------- write
     conn = connect(args.db)
     try:
-        cat_id = conn.execute(
-            "SELECT id FROM categories WHERE name = ?", (FALLBACK_CATEGORY,)
-        ).fetchone()
-        if cat_id is None:
-            sys.exit(f"Category '{FALLBACK_CATEGORY}' missing. Run scripts/init_db.py first.")
-        cat_id = cat_id[0]
-
         user_ids: dict[str, int] = {}
         for person in sorted(staff):
             existing = conn.execute("SELECT id FROM users WHERE name = ?", (person,)).fetchone()
@@ -209,9 +207,9 @@ def main() -> int:
             if existing:
                 product_ids[barcode] = existing[0]
                 continue
+            # category_id stays NULL — staff categorise as they rescan.
             cur = conn.execute(
-                "INSERT INTO products (barcode, name, category_id) VALUES (?, ?, ?)",
-                (barcode, name, cat_id),
+                "INSERT INTO products (barcode, name) VALUES (?, ?)", (barcode, name)
             )
             product_ids[barcode] = cur.lastrowid
 
@@ -234,11 +232,18 @@ def main() -> int:
             added_at = info["added_at"]
             added_at = (added_at.isoformat(sep=" ", timespec="seconds")
                         if isinstance(added_at, dt.datetime) else None)
+
+            # resolved_by is deliberately left NULL on pre-expired rows: nobody
+            # confirmed these, so don't put a name against them.
+            note = info["note"]
+            if status == "pulled":
+                note = f"{note}. {MIGRATION_NOTE}" if note else MIGRATION_NOTE
+
             conn.execute(
                 """INSERT INTO batches
                    (product_id, expiry_date, note, status, added_by, added_at, resolved_at)
                    VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)""",
-                (product_ids[barcode], expiry, info["note"], status,
+                (product_ids[barcode], expiry, note, status,
                  user_ids.get(info["user"]), added_at,
                  today.isoformat() if status == "pulled" else None),
             )
@@ -254,7 +259,7 @@ def main() -> int:
             print(f"  {already} batches already existed and were left alone")
         print(f"  live batches now on the home screen: {live}")
         print(f"\nAll staff PINs are set to {PLACEHOLDER_PIN} — change these before go-live.")
-        print("All products are in 'Uncategorised' — the old app had no real categories.")
+        print("No categories were created. Staff assign them as they rescan products.")
     finally:
         conn.close()
     return 0

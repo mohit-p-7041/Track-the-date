@@ -18,13 +18,23 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ----------------------------------------------------------- categories
+-- The list starts empty and grows as staff type categories while scanning.
+-- There is no 'Uncategorised' row: products.category_id IS NULL means
+-- uncategorised, which is a valid and common state.
 
 CREATE TABLE IF NOT EXISTS categories (
     id         INTEGER PRIMARY KEY,
-    name       TEXT    NOT NULL UNIQUE,
+    name       TEXT    NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 100,
-    active     INTEGER NOT NULL DEFAULT 1
+    active     INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
+
+-- Case-insensitive uniqueness. Ten people typing freely will otherwise produce
+-- 'Drinks', 'drinks' and 'DRINKS' as three separate categories within a week.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_name_nocase
+    ON categories(name COLLATE NOCASE);
 
 -- ------------------------------------------------------------- products
 -- One row per barcode. Name, category and photo live here so they are

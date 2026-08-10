@@ -29,6 +29,14 @@ These were considered and settled. Don't "improve" them into something else.
   entered when its date differs.
 - **One 7-day window**, not a set of bands. Read `expiry_window_days` from settings.
 - **No shelf location field.** Considered and rejected — it slows down entry.
+- **Categories are optional and grow by themselves.** The table starts empty. Staff pick or type
+  one while scanning; it attaches to the product so it covers every batch of that barcode.
+  `products.category_id IS NULL` means uncategorised and is a normal state — there is no
+  'Uncategorised' row. Never block the add path on a category. Don't build a bulk-categorisation
+  screen; that was considered and dropped.
+- **Photos are optional and backfill.** Attached to the product, so adding one later makes it
+  appear on batches recorded months ago. Lists show a placeholder and must not reflow when
+  images arrive.
 - **No animation, no transitions.** Adding a product happens hundreds of times a week. Clean and
   fast beats polished. Optimise the add path above everything else.
 
@@ -85,8 +93,9 @@ The beep export at `data/imports/beep_2026-08-10.xlsx` is real production data:
 2343 rows, 952 unique products, 2 staff accounts. It imports cleanly to 2340 batches — see
 `docs/DATA-NOTES.md`. Use it for realistic testing rather than inventing fixtures.
 
-Every product imports as `Uncategorised` — the old app only ever had one category. The category
-list in `app/seed.sql` is a placeholder awaiting the manager's real list.
+Every product imports with `category_id` NULL — the old app only ever had one category ('All'),
+so there was nothing to migrate. 583 batches were already expired at import and carry a note
+saying so; leave them alone, staff clear that backlog as they rescan.
 
 Product names are messy in ways that matter for search: inconsistent case
 (`C/RIDGE WATER 1L` vs `Cool Ridge Water 600ml`), trailing whitespace, some non-English

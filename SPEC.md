@@ -111,6 +111,32 @@ features. Don't build an admin tier.
 6. **Weekly discount sheet** — the printable. See below.
 7. **Settings** — categories, staff PINs, backup, Excel export. Open to everyone.
 
+### Categories grow themselves
+
+There is no categorisation project, and no seeded list. The categories table starts empty.
+
+When staff scan a product they can pick an existing category or type a new one. That choice
+attaches to the **product**, so it covers every batch of that barcode — past and future — and is
+never asked again. Category is optional; an uncategorised product is a normal, valid state and
+just shows blank.
+
+The useful consequence: the products staff scan most get categorised first. Monster Ultra Zero
+has 31 batches in the export, so one person typing "Energy Drinks" once covers all 31. The
+catalogue sorts itself in order of how much it matters, at zero migration cost. The long tail of
+products nobody touches stays uncategorised, and that's fine — nobody was looking for them.
+
+Because ten people are typing freely, the categories table has a **case-insensitive unique
+index**. Without it you get "Drinks", "drinks" and "DRINKS" inside a week. The category input
+should also suggest existing categories as you type, so people pick rather than invent.
+
+### Photos backfill the same way
+
+Products start with no photo. When someone adds one it attaches to the barcode, so it
+immediately appears everywhere that product shows up, including batches recorded months ago.
+
+Photo is never required. Nothing in the add path waits for a camera. Lists show a neutral
+placeholder where there's no image yet, and must not reflow or jump when photos appear later.
+
 ### UI principles
 
 Clean and no-nonsense. No animation, no transitions, no decorative flourish.
@@ -161,19 +187,20 @@ The same information is always on the home screen, live. The print is for the ai
 
 Your existing app has Settings → Export to Excel. That export is the starting point.
 
-An import script reads it and:
-- Creates one Product per unique barcode (first name/category wins, flagged for review if names
-  disagree across rows).
-- Creates one Batch per row.
-- Drops rows already past expiry into `status = pulled` so they don't clutter the home screen but
-  stay in the history.
-- Prints a summary: X products, Y batches, Z rows skipped and why.
+**Done.** The export is at `data/imports/beep_2026-08-10.xlsx` and the importer works — see
+`docs/DATA-NOTES.md` for verified numbers.
 
-Photos won't come across in an Excel export — those get rebuilt naturally as staff scan items over
-the following weeks.
+- 952 products, 2,340 batches, 0 rows skipped.
+- All products import with no category.
+- 583 already-expired batches import as `pulled`, with a note saying they expired before the
+  migration and were never verified. `resolved_by` is left empty — nobody confirmed them, so no
+  name goes against them.
 
-**Action needed from you:** run that export and drop the file in this folder. Your premium plan
-lapsed on 23 May, so if export is locked behind it, tell me early and we plan around it.
+Those 583 are stale records; the stock left the shelves long ago and nobody cleared the entries.
+They stay out of the daily view but remain in the history, and staff clear the backlog naturally
+as they rescan products over the coming weeks. No cleanup session needed.
+
+Photos can't come across in an Excel export. They rebuild naturally, one per barcode.
 
 ---
 
@@ -209,17 +236,24 @@ Deliberately boring. In eighteen months someone needs to be able to open this an
 
 ## 9. Timeline
 
-One month available. Realistic plan:
+One month available. Database, schema and import are done.
 
 | Week | Work |
 |---|---|
-| 1 | Database, PIN login, scan & add, home dashboard, categories |
-| 2 | Photos + compression, weekly print sheet, admin screens, Excel import |
+| 1 | PIN login, scan & add with duplicate check, home screen, inline categories |
+| 2 | Photos + compression, weekly print sheet, search, settings |
 | 3 | HTTPS + iPad certificates, install as service, backups, staff trial run |
-| 4 | Fixes from real-world use, training notes, handover doc |
+| 4 | Fixes from real-world use, Excel export, training notes |
 
 A usable v1 should exist by the end of week 2. Weeks 3–4 are what turn it from "works on my
 machine" into something the shop actually relies on.
+
+### Deferred, deliberately
+
+- **Excel export.** Wanted, but not needed to go live — the nightly backup already protects the
+  data, and the old app remains readable. Week 4.
+- **Quantity per batch.** Column exists at 1, hidden. Pending the manager's view.
+- **Bulk categorisation screen.** Not being built. Categories now grow through normal scanning.
 
 ---
 
@@ -236,14 +270,14 @@ Answered 10 Aug 2026:
 | Laptop | Acer Aspire A515-51G, Windows 11 Home. See `docs/LAPTOP-NOTES.md`. |
 | UI | Clean, fast, no animation. |
 
+| Categories | No fixed list. Created inline while scanning, optional, attached to the barcode. |
+| Expired backlog | Left as-is with a migration note. Cleared naturally, no cleanup session. |
+| Photos | Optional, added over time, attached to the barcode so they backfill. |
+| Excel export | Wanted, deferred to week 4. |
+
 Still outstanding:
 
-1. **The category list** — Mohit is confirming with the manager. `app/seed.sql` holds a
-   placeholder list of 15 built from the actual product mix. This blocks the bulk-categorisation
-   session but not development.
-2. **Bulk categorisation** — all 952 products import as `Uncategorised` because the old app only
-   ever had one category. Someone has to sort them. Worth a purpose-built screen: show 20
-   products at a time with category buttons, keyboard-driven. A few hours with a good screen
-   versus a few days with a bad one.
-3. **Where development happens** — recommend building on the Mac and deploying to the laptop by
+1. **Where development happens** — recommend building on the Mac and deploying to the laptop by
    git. See `docs/LAPTOP-NOTES.md`.
+2. **Quantity per batch** — Mohit is checking whether the manager wants counts. The column is
+   there at 1 and hidden, so enabling it later is a UI change, not a migration.
