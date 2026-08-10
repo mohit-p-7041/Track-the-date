@@ -1,0 +1,23 @@
+# The live data. Never commit — it's shop data and it changes constantly.
+data/tecoma.db
+data/tecoma.db-wal
+data/tecoma.db-shm
+data/photos/
+data/backups/
+
+# Certificates
+certs/
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
