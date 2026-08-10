@@ -1,8 +1,9 @@
 @echo off
 REM Track the Date - Tecoma
-REM Development launcher. For the real shop install, run as a service via NSSM.
+REM Double-click this to bring the app up. Close the window to stop it.
 
 cd /d "%~dp0"
+title Track the Date - Tecoma
 
 if not exist "data\tecoma.db" (
     echo No database found. Creating one...
@@ -15,16 +16,24 @@ if not exist "data\tecoma.db" (
     exit /b
 )
 
-echo Starting Track the Date...
+REM Back up on startup rather than overnight. The laptop is not on overnight,
+REM so a scheduled 2am backup would never run.
+python scripts\backup.py --quiet
+
 echo.
-echo   On this laptop:  http://localhost:8000
+echo   ======================================================
+echo     Track the Date - Tecoma
+echo   ======================================================
+python scripts\show_address.py
+echo   Leave this window open while staff are using the app.
+echo   Closing it, or pressing Ctrl+C, stops the app.
 echo.
-echo   From an iPad, use this machine's address on the shop WiFi.
-echo   Run 'ipconfig' in another window to find it.
-echo.
-echo   Press Ctrl+C to stop.
+echo   Anything already saved is safe. It is on the disk.
+echo   ======================================================
 echo.
 
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
+echo.
+echo   App stopped. All saved data is on the disk.
 pause

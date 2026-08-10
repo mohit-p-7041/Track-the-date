@@ -73,8 +73,13 @@ python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
 python scripts/check_db.py                                  # sanity checks — run before committing
 python scripts/check_db.py --expect-import                  # also assert the import numbers
+python scripts/backup.py                                    # snapshot db + photos, keep last 7
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload     # dev
 ```
+
+**The app runs on demand.** Staff double-click `start.bat` for a scan session (mainly weekends)
+and close the window afterwards. There is no service, no auto-start, no always-on assumption.
+Backups therefore run at startup, not overnight — a scheduled nightly job would never fire.
 
 **Run `scripts/check_db.py` after any change that touches the schema, the importer, or how
 batches are written.** It enforces the locked decisions above as executable checks and exits

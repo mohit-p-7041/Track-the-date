@@ -33,10 +33,23 @@ Windows rebooting for an update mid-shift. Both are fixable, and both are below.
 waiting. Get it done now, on your terms, rather than having Windows choose a moment during
 trading hours.
 
-## Stop it going to sleep
+## The app runs on demand
 
-The single most important configuration on this machine. If the laptop sleeps, every iPad in the
-shop loses the app.
+Decided 10 Aug 2026: this laptop is **not** a always-on server. Staff scan in sessions, mainly on
+the weekend. Someone double-clicks `start.bat`, the app comes up in about two seconds, and the
+window gets closed when the session is done.
+
+That removes several things this document used to call for — no NSSM service, no auto-start on
+boot, no keeping the machine awake around the clock. It also means **backups run when the app
+starts**, not overnight, because an overnight job would never fire.
+
+The settings below still matter, but only for the length of a session: you don't want the screen
+sleeping while someone is halfway through a shelf.
+
+## Stop it going to sleep mid-session
+
+If the laptop sleeps while staff are scanning, every iPad loses the app until it wakes. Nothing
+is lost — saved items are already on disk — but it interrupts the session.
 
 **Power mode** — Settings → System → Power & battery → Power mode → **Best performance** when
 plugged in.
@@ -53,7 +66,7 @@ Without that last step, closing the lid at the end of a shift kills the app even
 disabled. If the laptop is going to sit closed on a shelf, also confirm it isn't overheating —
 an A515 with a blocked vent will throttle.
 
-## Stop it rebooting during trading hours
+## Windows Update
 
 Windows 11 Home gives you less control here than Pro, but active hours are enough.
 
@@ -63,10 +76,9 @@ trading day, so Windows won't restart to finish an update while staff are scanni
 Also turn **off** "Get me up to date" if you see it — that setting lets Windows restart as soon as
 it likes, active hours or not.
 
-Home edition will still install updates eventually and will still reboot outside active hours.
-That's fine as long as the app is running as a service (below), because it comes back up by
-itself. If you skip the service step, someone has to remember to start the app manually after
-every reboot, and eventually nobody will.
+With the app running on demand this is much less critical than it would be for an always-on
+server — a reboot outside a scan session costs nothing, and the next session just starts the app
+again. Set active hours anyway so an update doesn't restart the machine mid-session.
 
 ## Let the iPads reach it
 
@@ -103,8 +115,16 @@ If you'd rather keep everything on the one machine, that also works. It'll just 
 Everything that matters is `data/tecoma.db` and `data/photos/`. Nothing else on this laptop is
 irreplaceable.
 
-Given 57.9 GB free, a nightly zip kept for 7 days costs well under a gigabyte. Point it at
-OneDrive or a USB stick so a dead laptop doesn't take the data with it — a single-machine setup
-with no off-machine copy is one hardware failure away from starting over.
+`scripts/backup.py` runs automatically every time `start.bat` brings the app up. It takes a
+consistent snapshot of the database (safe even while the app is serving), copies any new photos,
+and keeps the last 7 snapshots. The database is around 450 KB, so seven copies cost about 3 MB.
 
-Test a restore before you trust it. An untested backup is a guess.
+**Those backups sit on the same disk as the original**, which protects you from a mistake but not
+from a dead drive or a stolen laptop. Copy `data/backups` to OneDrive or a USB stick. A
+single-machine setup with no off-machine copy is one hardware failure away from starting over.
+
+Test a restore before you trust it. An untested backup is a guess. To check one:
+
+```powershell
+python -c "import sqlite3; c=sqlite3.connect(r'data\backups\tecoma-YYYY-MM-DD_HHMM.db'); print(c.execute('select count(*) from batches').fetchone())"
+```

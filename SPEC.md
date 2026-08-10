@@ -34,11 +34,30 @@ camera scanning on the iPads, the app is served over HTTPS from day one using **
    Settings → toggle it on.
 3. Done. No warnings, camera works.
 
-### Staying up
+### Operating model: on demand, not always on
 
-- Run as a Windows service (NSSM) so it starts on boot and survives reboots.
-- Power settings: never sleep, never hibernate while on mains.
-- Reserve the laptop's IP on the router so the iPad bookmark never breaks.
+The laptop is not a server and won't be treated as one. Staff scan in sessions, mainly on the
+weekend, so the app runs when it's wanted:
+
+- Double-click `start.bat`. It prints the address for the iPads and comes up in about two seconds.
+- Use it. Close the window when done.
+- Everything saved is already on the disk. There is no shutdown procedure.
+
+**This deletes work rather than adding it.** No NSSM service, no auto-start on boot, no
+always-awake configuration. Sleep and lid settings only matter for the length of a session.
+
+Two consequences worth holding onto:
+
+**Backups run on startup, not overnight.** A nightly scheduled job would never fire on a machine
+that is off overnight. `start.bat` calls `scripts/backup.py` every time the app comes up.
+
+**Nothing can be recorded while the app is down.** If someone spots a short-dated item on a
+Tuesday it isn't captured unless they bring the app up. Starting it is one double-click, so this
+is habit rather than architecture — but it is a real gap, and if it bites often that's the signal
+to run it always-on after all.
+
+Still worth doing: reserve the laptop's IP on the router, so the iPad bookmarks survive between
+sessions.
 
 ---
 
@@ -242,8 +261,11 @@ One month available. Database, schema and import are done.
 |---|---|
 | 1 | PIN login, scan & add with duplicate check, home screen, inline categories |
 | 2 | Photos + compression, weekly print sheet, search, settings |
-| 3 | HTTPS + iPad certificates, install as service, backups, staff trial run |
+| 3 | HTTPS + iPad certificates, first real weekend scan session with staff |
 | 4 | Fixes from real-world use, Excel export, training notes |
+
+Week 3 got lighter when the app became on-demand: no service install, no boot configuration.
+The backup script is already written and runs on startup.
 
 A usable v1 should exist by the end of week 2. Weeks 3–4 are what turn it from "works on my
 machine" into something the shop actually relies on.

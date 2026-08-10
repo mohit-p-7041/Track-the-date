@@ -155,15 +155,16 @@ slower than building it piece by piece.
 Not needed for development, but this is what makes it real. Full detail with the exact Windows
 settings is in `docs/LAPTOP-NOTES.md`.
 
-1. **Stop the laptop sleeping** — including "do nothing" when the lid closes. The single most
-   important setting; if the laptop sleeps, every iPad loses the app.
-2. **Set active hours** so Windows Update doesn't reboot mid-shift.
-3. **HTTPS via mkcert** — required for iPad camera scanning. Safari refuses camera access over
+The app runs **on demand**, not as an always-on server. Someone double-clicks `start.bat` at the
+start of a scan session and closes the window at the end. Everything saved is already on disk;
+there is no shutdown procedure.
+
+1. **HTTPS via mkcert** — required for iPad camera scanning. Safari refuses camera access over
    plain `http://` from a network address.
-4. **Reserve the laptop's IP** on the router, so the iPad bookmarks don't break.
-5. **Run as a service** via NSSM, so it starts on boot and restarts if it crashes.
-6. **Backups** — nightly zip of `data/tecoma.db` and `data/photos/`, pointed at OneDrive or a USB
-   stick. Test that a restore actually works before you trust it.
+2. **Reserve the laptop's IP** on the router, so the iPad bookmarks survive between sessions.
+3. **Stop the laptop sleeping mid-session** — including "do nothing" when the lid closes.
+4. **Copy `data/backups` off the machine.** Backups run automatically on startup, but they land
+   on the same disk as the original. Point them at OneDrive or a USB stick.
 
 ---
 
