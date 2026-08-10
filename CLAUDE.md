@@ -22,6 +22,15 @@ These were considered and settled. Don't "improve" them into something else.
   that barcode. Photos and category live on the Product so they're stored once.
 - **PINs are accountability, not security.** 4 digits, LAN-only app. Don't add password
   complexity rules, lockouts, or session hardening. Do keep the audit trail accurate.
+- **No roles.** ~10 staff, one shop. Everyone can do everything, including adding categories and
+  removing batches. Don't build an admin tier or gate features behind a manager PIN.
+- **No counting.** A batch is "this product has stock dying on this date", not a quantity. The
+  `quantity` column exists, defaults to 1, and is never shown or edited. A second item is only
+  entered when its date differs.
+- **One 7-day window**, not a set of bands. Read `expiry_window_days` from settings.
+- **No shelf location field.** Considered and rejected — it slows down entry.
+- **No animation, no transitions.** Adding a product happens hundreds of times a week. Clean and
+  fast beats polished. Optimise the add path above everything else.
 
 ## Layout
 
@@ -41,7 +50,10 @@ data/
 scripts/
   init_db.py    create the database
   import_beep.py  load the old app's Excel export
-docs/reference/ screenshots of the old app, for UI reference
+docs/
+  DATA-NOTES.md   what's in the beep export, verified by running the import
+  LAPTOP-NOTES.md the shop machine: specs, sleep settings, firewall, backups
+  reference/      screenshots of the old app, for UI reference
 ```
 
 ## Commands
@@ -70,8 +82,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8443 --reload     # dev
 ## The data
 
 The beep export at `data/imports/beep_2026-08-10.xlsx` is real production data:
-2343 rows, 952 unique products, 2 staff accounts. It imports cleanly — see `docs/DATA-NOTES.md`.
-Use it for realistic testing rather than inventing fixtures.
+2343 rows, 952 unique products, 2 staff accounts. It imports cleanly to 2340 batches — see
+`docs/DATA-NOTES.md`. Use it for realistic testing rather than inventing fixtures.
+
+Every product imports as `Uncategorised` — the old app only ever had one category. The category
+list in `app/seed.sql` is a placeholder awaiting the manager's real list.
 
 Product names are messy in ways that matter for search: inconsistent case
 (`C/RIDGE WATER 1L` vs `Cool Ridge Water 600ml`), trailing whitespace, some non-English

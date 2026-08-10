@@ -63,32 +63,44 @@ This matters for three reasons:
 
 | Table | Fields |
 |---|---|
-| `users` | id, name, pin_hash, role (staff / manager), active |
+| `users` | id, name, pin_hash, pin_salt, active |
 | `categories` | id, name, sort_order, active |
 | `products` | id, **barcode (unique)**, name, category_id, image_path, created_at, created_by |
-| `batches` | id, product_id, expiry_date, quantity, note, status, added_by, added_at, resolved_by, resolved_at |
-| `settings` | key, value (thresholds, shop name, backup path) |
+| `batches` | id, product_id, expiry_date, note, status, added_by, added_at, resolved_by, resolved_at |
+| `settings` | key, value (expiry window, shop name, image settings) |
 
-`batches` carries a unique index on (product_id, expiry_date) for active rows — that is the
+`batches` carries a unique index on (product_id, expiry_date) for live rows — that is the
 duplication guard.
 
 Batch `status` is one of `active`, `discounted`, `pulled`, `sold`. Nothing is hard-deleted by
-default, so you keep a record of what actually got wasted vs. sold down. Managers can purge old
-resolved rows.
+default, so you keep a record of what actually got wasted vs. sold down.
+
+### No counting
+
+The shop does not track how many of a thing it has. A second Redbull Zero 250ml is entered only
+if its expiry date differs from one already recorded. So a batch is a fact — "this product has
+stock dying on this date" — not a quantity.
+
+This is why the duplicate rule is the whole data model rather than a validation nicety. The
+schema keeps a `quantity` column defaulting to 1 in case the manager later wants counts, but it
+is never shown and never edited.
 
 ### Accountability
 
 Every batch records who added it and who resolved it, with a timestamp. Staff log in with their
-name and a 4-digit PIN — enough to know who did what, not so much that it slows the counter down.
-Manager PIN is needed for: adding categories, adding/removing staff, bulk delete, and export.
+name and a 4-digit PIN.
+
+**There are no roles.** Around 10 staff, one shop, everyone can do everything — including adding
+categories and removing batches. The PIN exists so the log says who did what, not to gate
+features. Don't build an admin tier.
 
 ---
 
 ## 3. Screens
 
 1. **PIN login** — big number pad, pick your name, four digits.
-2. **Home** — near-expiry dashboard. Colour-coded bands: Expired / ≤7 days / ≤14 days / ≤30 days,
-   with counts. Tap a band to see the list. Filter by category.
+2. **Home** — what's due. Expired, then due within 7 days, then everything upcoming. Filter by
+   category.
 3. **Scan & Add** — the main workflow.
    - Counter (laptop): USB scanner gun fires the barcode straight into the field.
    - Aisle (iPad): camera scanner.
@@ -97,7 +109,23 @@ Manager PIN is needed for: adding categories, adding/removing staff, bulk delete
 4. **Product list** — search by name or barcode, filter by category, sort by soonest expiry.
 5. **Product detail** — photo, all batches for that barcode, history.
 6. **Weekly discount sheet** — the printable. See below.
-7. **Admin** — categories, staff PINs, backup, Excel export.
+7. **Settings** — categories, staff PINs, backup, Excel export. Open to everyone.
+
+### UI principles
+
+Clean and no-nonsense. No animation, no transitions, no decorative flourish.
+
+Adding a product is the action that happens hundreds of times a week, and every extra field or
+half-second of motion is a tax on it. Optimise that path above everything else; the rest of the
+app can be plain.
+
+Deliberately **not** captured: shelf location, aisle, fridge number. Staff know where things are,
+and the field would only slow entry down.
+
+### One window: 7 days
+
+There is a single threshold, not a set of bands. Within 7 days is due; beyond it is upcoming.
+Stored as `expiry_window_days` so it can change without touching code.
 
 ---
 
@@ -107,8 +135,8 @@ Printed on the weekend, covering the week ahead.
 
 - Pulls every batch expiring in the next 7 days (date range adjustable before printing).
 - Grouped by category, sorted by date within each group.
-- One line per item: tick box, product name, expiry date, quantity, barcode, blank column for
-  the discount price.
+- One line per item: tick box, product name, expiry date, barcode, blank column for the
+  discount price.
 - Clean A4 print layout — no navigation, no colours that eat toner.
 - Staff walk the aisles with paper, tick items off, then mark them discounted in the app after.
 
@@ -195,12 +223,27 @@ machine" into something the shop actually relies on.
 
 ---
 
-## 10. Open questions
+## 10. Settled and outstanding
 
-1. **Categories** — what are the predetermined ones? (Drinks, Dairy, Snacks, Bakery, Frozen…?)
-2. **Near-expiry thresholds** — is 7 / 14 / 30 days right, or does BP use different windows?
-3. **Quantity** — do you track how many of each batch, or is it one row per physical item?
-4. **Location** — worth recording where in the shop an item sits (fridge 2, aisle 3), to speed up
-   the aisle walk?
-5. **Laptop** — Windows 10 or 11? Does it stay switched on overnight?
-6. **Staff count** — how many people need a PIN?
+Answered 10 Aug 2026:
+
+| Question | Answer |
+|---|---|
+| Near-expiry thresholds | One window, 7 days. No multi-band scheme. |
+| Quantity | Not tracked. One batch per product + date. |
+| Shelf location | Not captured — adds friction, staff know the shop. |
+| Roles | None. ~10 staff, everyone can do everything. |
+| Laptop | Acer Aspire A515-51G, Windows 11 Home. See `docs/LAPTOP-NOTES.md`. |
+| UI | Clean, fast, no animation. |
+
+Still outstanding:
+
+1. **The category list** — Mohit is confirming with the manager. `app/seed.sql` holds a
+   placeholder list of 15 built from the actual product mix. This blocks the bulk-categorisation
+   session but not development.
+2. **Bulk categorisation** — all 952 products import as `Uncategorised` because the old app only
+   ever had one category. Someone has to sort them. Worth a purpose-built screen: show 20
+   products at a time with category buttons, keyboard-driven. A few hours with a good screen
+   versus a few days with a bad one.
+3. **Where development happens** — recommend building on the Mac and deploying to the laptop by
+   git. See `docs/LAPTOP-NOTES.md`.

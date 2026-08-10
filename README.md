@@ -5,6 +5,12 @@ Expiry tracker for BP Tecoma. Runs on one shop laptop, reachable from iPads on t
 - `SPEC.md` — what we're building and why
 - `CLAUDE.md` — working rules, read automatically by Claude Code
 - `docs/DATA-NOTES.md` — what's in the old app's export
+- `docs/LAPTOP-NOTES.md` — the shop machine: sleep settings, firewall, backups
+
+> **Where to build:** recommend developing on the Mac and deploying to the shop laptop via git.
+> The laptop handles running the app easily, but Claude Code plus a browser plus the app on 8 GB
+> is a slow way to work. Reasoning in `docs/LAPTOP-NOTES.md`. The steps below apply to whichever
+> machine you build on; the shop laptop needs them regardless.
 
 ---
 
@@ -146,14 +152,17 @@ slower than building it piece by piece.
 
 ## Going live in the shop
 
-Not needed for development, but this is what makes it real. See `SPEC.md` section 1.
+Not needed for development, but this is what makes it real. Full detail with the exact Windows
+settings is in `docs/LAPTOP-NOTES.md`.
 
-1. **HTTPS via mkcert** — required for iPad camera scanning. Safari refuses camera access over
+1. **Stop the laptop sleeping** — including "do nothing" when the lid closes. The single most
+   important setting; if the laptop sleeps, every iPad loses the app.
+2. **Set active hours** so Windows Update doesn't reboot mid-shift.
+3. **HTTPS via mkcert** — required for iPad camera scanning. Safari refuses camera access over
    plain `http://` from a network address.
-2. **Reserve the laptop's IP** on the router, so the iPad bookmark doesn't break.
-3. **Power settings** — never sleep, never hibernate on mains.
-4. **Run as a service** via NSSM, so it starts on boot and restarts if it crashes.
-5. **Backups** — nightly zip of `data/tecoma.db` and `data/photos/`, pointed at OneDrive or a USB
+4. **Reserve the laptop's IP** on the router, so the iPad bookmarks don't break.
+5. **Run as a service** via NSSM, so it starts on boot and restarts if it crashes.
+6. **Backups** — nightly zip of `data/tecoma.db` and `data/photos/`, pointed at OneDrive or a USB
    stick. Test that a restore actually works before you trust it.
 
 ---

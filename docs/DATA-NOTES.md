@@ -10,7 +10,7 @@ against it — these numbers come from the actual import, not an estimate.
 | Rows | 2,343 |
 | Unique products (barcodes) | 952 |
 | Batches created | 2,340 |
-| Rows merged as duplicates | 3 |
+| Duplicate rows collapsed | 3 |
 | Rows skipped | 0 |
 | Staff accounts | 2 — `BP TECOMA` (2,293 rows), `sar ob` (50 rows) |
 | Date range | 25 May 2026 → 30 Mar 2032 |
@@ -26,14 +26,11 @@ different product names. That's better than most real-world imports.
 | Band | Batches |
 |---|---|
 | Already expired (imported as `pulled`) | 583 |
-| Expiring today | 7 |
-| Next 7 days | 55 |
-| 8–14 days | 44 |
-| 15–30 days | 121 |
-| Beyond 30 days | 1,530 |
+| Due within 7 days | 62 |
+| Upcoming | 1,695 |
 | **Live total** | **1,757** |
 
-Sum of all batch quantities is 2,343, reconciling exactly with the original row count.
+2,340 batches + 3 collapsed duplicates = 2,343, reconciling exactly with the original row count.
 
 ## Things worth knowing
 
@@ -54,8 +51,8 @@ rows stops being trusted — the new app should make resolving an item as fast a
 - X-treme sour watermelon 160g — 4 Jul 2026
 - K/KAZE CREAMY SODA — 9 Jul 2026
 
-These merge into single batches with quantity 2. The new schema forbids this at the database
-level via `idx_batches_unique_live`.
+Since the shop doesn't count stock, these collapse into one batch each. The new schema forbids
+the pair from recurring at the database level via `idx_batches_unique_live`.
 
 **Names are messy in ways that affect search.** Inconsistent casing (`C/RIDGE WATER 1L` next to
 `Cool Ridge Water 600ml`), trailing whitespace, curly apostrophes (`Annie's`), one product name in
@@ -79,7 +76,8 @@ field but not worth prominent screen space.
 | Mt Franklin Still Water 600ml | 18 |
 
 At 2.5 batches per product on average, storing the photo once per barcode rather than once per
-row is roughly a 60% saving on image storage before compression even starts.
+row is roughly a 60% saving on image storage before compression even starts. At ~60 KB per photo
+across 952 products, the full library lands near 57 MB.
 
 ## Re-running the import
 

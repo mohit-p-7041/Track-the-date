@@ -4,13 +4,15 @@
 PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------- users
+-- There are no roles. Every member of staff can do everything, including
+-- adding categories and removing batches. The PIN exists so the audit trail
+-- says who did what, not to gate anything off.
 
 CREATE TABLE IF NOT EXISTS users (
     id         INTEGER PRIMARY KEY,
     name       TEXT    NOT NULL UNIQUE,
     pin_hash   TEXT    NOT NULL,
     pin_salt   TEXT    NOT NULL,
-    role       TEXT    NOT NULL DEFAULT 'staff' CHECK (role IN ('staff', 'manager')),
     active     INTEGER NOT NULL DEFAULT 1,
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -44,12 +46,16 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
 -- -------------------------------------------------------------- batches
 -- One row per (product, expiry date). This is what the shop actually
 -- tracks day to day.
+--
+-- There is no counting. A second Redbull Zero 250ml is only ever entered if
+-- its expiry date differs from one already recorded. `quantity` is reserved
+-- for a possible future change and is always 1 — do not surface it in the UI.
 
 CREATE TABLE IF NOT EXISTS batches (
     id          INTEGER PRIMARY KEY,
     product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     expiry_date TEXT    NOT NULL,                        -- ISO 'YYYY-MM-DD'
-    quantity    INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    quantity    INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),  -- reserved, always 1
     note        TEXT,
     status      TEXT    NOT NULL DEFAULT 'active'
                         CHECK (status IN ('active', 'discounted', 'pulled', 'sold')),

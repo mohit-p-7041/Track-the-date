@@ -10,13 +10,14 @@ What it does with the data:
 
   * One product per unique barcode. Names are trimmed; the first name seen for
     a barcode wins and any later disagreement is reported.
-  * One batch per row. Rows that repeat a (barcode, expiry date) pair are
-    merged into a single batch with quantity summed, because the database
-    forbids duplicate live pairs by design.
+  * One batch per (barcode, expiry date) pair. The shop does not count stock —
+    a second item is only recorded if its date differs — so rows that repeat a
+    pair collapse into one batch rather than accumulating a quantity.
   * Rows already past their expiry date are imported as status 'pulled' so they
     stay in the history without cluttering the home screen.
   * Staff named in 'Added User' are created as users so the audit trail carries
     over. They all get the same placeholder PIN — change it before go-live.
+    There are no roles; everyone can do everything.
 """
 
 from __future__ import annotations
@@ -147,12 +148,14 @@ def main() -> int:
         memo = (str(row["Memo"]).strip() if row["Memo"] else "") or None
         key = (barcode, expiry)
         if key in pairs:
-            pairs[key]["quantity"] += 1
+            # The shop doesn't count stock: a repeated (product, date) pair is
+            # a duplicate entry in the old app, not two tracked items.
+            pairs[key]["dupes"] += 1
         else:
-            pairs[key] = {"quantity": 1, "note": memo, "user": user,
+            pairs[key] = {"dupes": 0, "note": memo, "user": user,
                           "added_at": row["Added Date"]}
 
-    merged = sum(p["quantity"] - 1 for p in pairs.values())
+    merged = sum(p["dupes"] for p in pairs.values())
     expired = sum(1 for (_, d) in pairs if dt.date.fromisoformat(d) < today)
 
     # ------------------------------------------------------------- report
@@ -161,7 +164,7 @@ def main() -> int:
     print(f"  batches to create          : {len(pairs)}")
     print(f"    already expired -> pulled: {expired}")
     print(f"    still live               : {len(pairs) - expired}")
-    print(f"  rows merged as duplicates  : {merged}")
+    print(f"  duplicate rows collapsed   : {merged}")
     print(f"  staff found                : {sorted(staff)}")
     print(f"  rows skipped               : {len(skipped)}")
     for n, why in skipped[:10]:
@@ -192,10 +195,9 @@ def main() -> int:
                 user_ids[person] = existing[0]
                 continue
             pin_hash, salt = hash_pin(PLACEHOLDER_PIN)
-            role = "manager" if person.upper() == "BP TECOMA" else "staff"
             cur = conn.execute(
-                "INSERT INTO users (name, pin_hash, pin_salt, role) VALUES (?, ?, ?, ?)",
-                (person, pin_hash, salt, role),
+                "INSERT INTO users (name, pin_hash, pin_salt) VALUES (?, ?, ?)",
+                (person, pin_hash, salt),
             )
             user_ids[person] = cur.lastrowid
 
@@ -234,10 +236,9 @@ def main() -> int:
                         if isinstance(added_at, dt.datetime) else None)
             conn.execute(
                 """INSERT INTO batches
-                   (product_id, expiry_date, quantity, note, status, added_by, added_at,
-                    resolved_at)
-                   VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)""",
-                (product_ids[barcode], expiry, info["quantity"], info["note"], status,
+                   (product_id, expiry_date, note, status, added_by, added_at, resolved_at)
+                   VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)""",
+                (product_ids[barcode], expiry, info["note"], status,
                  user_ids.get(info["user"]), added_at,
                  today.isoformat() if status == "pulled" else None),
             )
