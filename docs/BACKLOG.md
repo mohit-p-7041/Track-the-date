@@ -218,6 +218,11 @@ be done from here: **follow `docs/STAFF-SETUP.md` at the laptop.** Roughly twent
 **HTTPS + iPad certificates** (SPEC §1) — day 2. `start.bat` already switches automatically when
 `certs/` exists; this is mkcert plus about two minutes per iPad, not a code change.
 
+*Confirmed, not assumed:* the app does serve over HTTPS with the flags `start.bat` passes (TLS
+1.3, every screen), `show_address.py` takes the arguments it is handed, and the session cookie is
+correctly not `Secure` so http keeps working. The procedure is `docs/HTTPS-SETUP.md`. The mkcert
+run and the iPad profile install need the shop hardware.
+
 **Camera scanning in the aisles** — day 2, straight after the certificates, because Safari will
 not open a camera over plain http from a network address. ZXing-js gets vendored into
 `app/static/vendor/`; no CDN.
