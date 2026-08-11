@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="form-wrap">
+
+  {% if message %}<p class="saved">{{ message }}</p>{% endif %}
+
+  <h2 class="head">Expiry window</h2>
+  <div class="card">
+    <form class="row-form" method="post" action="/settings/window">
+      <input class="field" name="days" type="number" min="1" max="90" value="{{ window }}">
+      <button class="btn btn-quiet" type="submit">Save</button>
+    </form>
+    <p class="note">
+      One window, not a set of bands. Anything expiring within this many days
+      counts as due, on the home screen and on the printed sheet.
+    </p>
+  </div>
+
+  <h2 class="head">Categories</h2>
+  <div class="card">
+    {% for c in categories %}
+      <form class="row-form" method="post" action="/settings/categories/{{ c.id }}">
+        <input class="field" name="name" value="{{ c.name }}" autocomplete="off">
+        <button class="btn btn-quiet" type="submit">Rename</button>
+        <span class="note">{{ c.products }} product{{ '' if c.products == 1 else 's' }}</span>
+      </form>
+    {% endfor %}
+
+    <form class="row-form" method="post" action="/settings/categories">
+      <input class="field" name="name" placeholder="New category" autocomplete="off">
+      <button class="btn btn-quiet" type="submit">Add</button>
+    </form>
+
+    <p class="note">
+      Categories mostly appear by themselves as staff type them while scanning.
+      Names are matched without case, so Drinks and drinks cannot both exist.
+    </p>
+  </div>
+
+  <h2 class="head">Staff</h2>
+  <div class="card">
+    {% for s in staff %}
+      <form class="row-form" method="post" action="/settings/staff/{{ s.id }}/pin">
+        <span class="row-name">{{ s.name }}</span>
+        <input class="field field-pin" name="pin" inputmode="numeric" maxlength="4"
+               placeholder="New PIN" autocomplete="off">
+        <button class="btn btn-quiet" type="submit">Reset PIN</button>
+      </form>
+    {% endfor %}
+
+    <form class="row-form" method="post" action="/settings/staff">
+      <input class="field" name="name" placeholder="Name" autocomplete="off">
+      <input class="field field-pin" name="pin" inputmode="numeric" maxlength="4"
+             placeholder="PIN" autocomplete="off">
+      <button class="btn btn-quiet" type="submit">Add</button>
+    </form>
+
+    <p class="note">
+      Everyone can do everything, including this page. The PIN says who added
+      or resolved something; it is not a lock.
+    </p>
+  </div>
+
+  <h2 class="head">Backup</h2>
+  <div class="card">
+    <form method="post" action="/settings/backup">
+      <button class="btn btn-quiet" type="submit">Back up now</button>
+    </form>
+    <p class="note">
+      {% if last_backup %}
+        Last backup: {{ last_backup }} &middot; {{ backup_count }} kept.
+      {% else %}
+        No backup has been taken yet.
+      {% endif %}
+    </p>
+    <p class="note">
+      A backup also runs every time start.bat brings the app up. They land in
+      data/backups on this same laptop &mdash; copy that folder to a USB stick
+      or OneDrive, or a dead drive takes both copies with it.
+    </p>
+  </div>
+
+</div>
+{% endblock %}

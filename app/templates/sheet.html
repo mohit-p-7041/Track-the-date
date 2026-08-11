@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Discount sheet{% endblock %}
+
+{% block content %}
+
+  <form class="search no-print" method="get" action="/sheet">
+    <label class="label" for="days" style="margin:0; align-self:center;">Next</label>
+    <input class="field" id="days" name="days" type="number" min="1" max="90"
+           value="{{ window }}" style="width:5rem;">
+    <label class="label" style="margin:0; align-self:center;">days</label>
+    <button class="btn" type="submit">Update</button>
+    <button class="btn btn-quiet" type="button" id="print">Print</button>
+  </form>
+
+  <div class="sheet">
+
+    <h1 class="sheet-title">
+      Discount sheet &mdash; {{ today | au_date }} to {{ cutoff | au_date }}
+    </h1>
+
+    {% if not groups %}
+      <p class="empty">Nothing due in the next {{ window }} days.</p>
+    {% endif %}
+
+    {% for name, items in groups %}
+      <h2 class="sheet-group">{{ name or "No category" }} &mdash; {{ items | length }}</h2>
+      <table class="sheet-table">
+        <thead>
+          <tr>
+            <th class="col-tick"></th>
+            <th class="col-name">Product</th>
+            <th class="col-date">Expires</th>
+            <th class="col-barcode">Barcode</th>
+            <th class="col-price">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in items %}
+            <tr>
+              <td class="col-tick"><span class="tick"></span></td>
+              <td class="col-name">{{ r.name }}</td>
+              <td class="col-date">
+                {{ r.expiry_date | au_date }}{% if r.expiry_date < today.isoformat() %} (past){% endif %}
+              </td>
+              <td class="col-barcode">{{ r.barcode }}</td>
+              <td class="col-price"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endfor %}
+
+    <p class="sheet-foot">
+      {{ total }} item{{ '' if total == 1 else 's' }}.
+      Tick as you go, then mark them off in the app.
+    </p>
+
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.getElementById('print').addEventListener('click', function () {
+    window.print();
+  });
+</script>
+{% endblock %}

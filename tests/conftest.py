@@ -40,6 +40,20 @@ def days(n: int) -> str:
     return (dt.date.today() + dt.timedelta(days=n)).isoformat()
 
 
+@pytest.fixture(autouse=True)
+def photo_dir(tmp_path: Path, monkeypatch) -> Path:
+    """Photos go to a temp folder for every test, never to data/photos.
+
+    Autouse for the same reason the database is temporary: the suite has to be
+    safe to run on the shop laptop, and an upload test writing into the real
+    photo folder would leave litter that check_db.py then reports on.
+    """
+    directory = tmp_path / "photos"
+    directory.mkdir()
+    monkeypatch.setenv("TTD_PHOTO_DIR", str(directory))
+    return directory
+
+
 @pytest.fixture
 def db_path(tmp_path: Path) -> Path:
     """A fresh database file with the real schema and settings, no data."""
@@ -110,9 +124,13 @@ def sample(db: sqlite3.Connection) -> dict:
     return {"user_id": user_id, "cat_id": cat_id, "products": ids, "batches": batch_ids}
 
 
+STAFF_NAME = "Test Staff"
+STAFF_PIN = "1234"
+
+
 @pytest.fixture
-def client(db_path: Path):
-    """The real app, pointed at the temp database.
+def anon_client(db_path: Path):
+    """The app with nobody signed in. For the login screen and the gate.
 
     If a future route opens a connection itself instead of depending on
     get_conn, it will read the shop's real database here and these tests will
@@ -130,3 +148,35 @@ def client(db_path: Path):
     with TestClient(fastapi_app) as test_client:
         yield test_client
     fastapi_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def staff(db_path: Path) -> dict:
+    """One member of staff who can sign in, separate from the `sample` data.
+
+    Named distinctly from `sample`'s user so the two fixtures compose — every
+    screen is behind a PIN now, so most tests need both.
+    """
+    pin_hash, pin_salt = hash_pin(STAFF_PIN)
+    conn = connect(db_path)
+    user_id = conn.execute(
+        "INSERT INTO users (name, pin_hash, pin_salt) VALUES (?, ?, ?)",
+        (STAFF_NAME, pin_hash, pin_salt),
+    ).lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": user_id, "name": STAFF_NAME, "pin": STAFF_PIN}
+
+
+@pytest.fixture
+def client(anon_client: TestClient, staff: dict):
+    """The real app with someone signed in — the state every screen assumes.
+
+    Signs in through the actual login route rather than forging a cookie, so
+    if login breaks, every screen test says so.
+    """
+    response = anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": staff["pin"]}, follow_redirects=False
+    )
+    assert response.status_code == 303, "the client fixture could not sign in"
+    return anon_client

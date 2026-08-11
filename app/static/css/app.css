@@ -33,11 +33,131 @@ body {
 
 .bar-title { font-weight: 600; }
 
+.bar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
 .bar-nav a {
   color: #0a58ca;
   text-decoration: none;
   padding: 0.5rem;
 }
+
+/* Who's signed in, and the way out. Every write is stamped with this name. */
+.bar-who {
+  color: #6a6a70 !important;
+  font-size: 0.85rem;
+}
+
+/* --------------------------------------------------------- sign in pad */
+
+.pad {
+  max-width: 22rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  text-align: center;
+}
+
+.pad-title {
+  font-size: 1.25rem;
+  margin: 0 0 1rem;
+}
+
+.who { list-style: none; margin: 0; padding: 0; }
+.who li { margin-bottom: 0.6rem; }
+
+.pin {
+  width: 100%;
+  font-size: 2rem;
+  text-align: center;
+  letter-spacing: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid #c8c8ce;
+  border-radius: 8px;
+  background: #fff;
+  margin-bottom: 0.8rem;
+}
+
+/* Big targets: one-handed on an iPad, no keyboard needed. */
+.keys {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.key {
+  font-size: 1.6rem;
+  font-family: inherit;
+  padding: 1rem 0;
+  border: 1px solid #c8c8ce;
+  border-radius: 10px;
+  background: #fff;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+
+.key-quiet { font-size: 1rem; color: #6a6a70; }
+
+.message {
+  background: #fdecea;
+  border: 1px solid #f3c2bd;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+
+.note { color: #6a6a70; font-size: 0.85rem; }
+
+/* ------------------------------------------------------- buttons, chips */
+
+.btn {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.75rem 1.1rem;
+  border: 1px solid #0a58ca;
+  border-radius: 8px;
+  background: #0a58ca;
+  color: #fff;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+}
+
+.btn-wide { display: block; width: 100%; }
+
+.btn-quiet {
+  background: #fff;
+  color: #1a1a1a;
+  border-color: #c8c8ce;
+}
+
+.filters {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.6rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #d8d8dc;
+}
+
+.chip {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #c8c8ce;
+  border-radius: 999px;
+  background: #fff;
+  color: #1a1a1a;
+  text-decoration: none;
+}
+
+.chip-on { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
 
 /* --------------------------------------------------------------- lists */
 
@@ -93,6 +213,9 @@ main { padding-bottom: 3rem; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  flex: 1 1 auto;
+  color: inherit;
+  text-decoration: none;
 }
 
 .item-date {
@@ -118,13 +241,238 @@ main { padding-bottom: 3rem; }
   font-size: 0.85rem;
 }
 
+/* ------------------------------------------------------ product screens */
+
+.search {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border-bottom: 1px solid #d8d8dc;
+}
+
+.search .field { margin-bottom: 0; }
+
+.item-right {
+  margin-left: auto;
+  text-align: right;
+  font-size: 0.85rem;
+  color: #6a6a70;
+  white-space: nowrap;
+}
+
+.item-right .item-meta { display: block; }
+
+.item-stack { align-items: flex-start; }
+
+/* Resolved dates stay on the page — waste has to stay reviewable — but they
+   are history, so they sit back. */
+.item-done { color: #8a8a90; }
+
+.tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  margin-left: 0.3rem;
+  border: 1px solid #d8d8dc;
+  border-radius: 4px;
+  color: #6a6a70;
+  vertical-align: 0.1em;
+}
+
+.actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.btn-small { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+
+.thumb-big { width: 84px; height: 84px; }
+
+.camera-view {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  background: #1a1a1a;
+  border-radius: 8px;
+  margin: 0.5rem 0;
+}
+
+.inline-form { margin-top: 0.5rem; }
+
+/* --------------------------------------------------------------- forms */
+
+.form-wrap {
+  max-width: 30rem;
+  margin: 1rem auto;
+  padding: 0 1rem;
+}
+
+/* The product screen carries a list of dates with three buttons on each row,
+   which needs more width than a form does. */
+.form-wrap-wide { max-width: 44rem; }
+
+.card {
+  background: #fff;
+  border: 1px solid #d8d8dc;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a6a70;
+  margin: 0.9rem 0 0.3rem;
+}
+
+.label:first-child { margin-top: 0; }
+
+.hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: #8a8a90; }
+
+.field {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid #c8c8ce;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a1a;
+  margin-bottom: 0.4rem;
+}
+
+/* The barcode and the date are the two things anyone actually types. */
+.field-big { font-size: 1.3rem; padding: 0.7rem; }
+
+.known {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.known-name { display: block; font-weight: 600; font-size: 1.1rem; }
+
+.saved {
+  background: #e7f4ea;
+  border: 1px solid #b9dfc4;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  margin: 0 0 0.8rem;
+  font-size: 0.9rem;
+}
+
+/* ------------------------------------------------------------- settings */
+
+.row-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.row-form .field { margin-bottom: 0; }
+.row-form .note { margin: 0; white-space: nowrap; }
+
+.row-name { flex: 1 1 auto; min-width: 0; }
+
+.field-pin { width: 7rem; flex: 0 0 auto; }
+
+/* --------------------------------------------------- the discount sheet */
+
+.sheet {
+  background: #fff;
+  padding: 1rem;
+  margin: 1rem;
+  border: 1px solid #d8d8dc;
+  border-radius: 10px;
+}
+
+.sheet-title { font-size: 1.1rem; margin: 0 0 0.75rem; }
+
+.sheet-group {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 1.25rem 0 0.35rem;
+}
+
+.sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.sheet-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6a6a70;
+  border-bottom: 1px solid #c8c8ce;
+  padding: 0.2rem 0.3rem;
+}
+
+.sheet-table td {
+  padding: 0.35rem 0.3rem;
+  border-bottom: 1px solid #ececf0;
+  vertical-align: top;
+}
+
+.col-tick { width: 1.6rem; }
+.col-date { width: 6.5rem; white-space: nowrap; }
+.col-barcode { width: 8.5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.col-price { width: 5rem; }
+
+/* An empty box to tick with a pen, not a form control. */
+.tick {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1px solid #6a6a70;
+  border-radius: 2px;
+}
+
+.sheet-foot { margin-top: 1rem; font-size: 0.85rem; color: #6a6a70; }
+
 /* --------------------------------------------------------------- print
-   The weekly discount sheet. No navigation, no heavy ink. */
+   The weekly discount sheet on A4. No navigation, no heavy ink. */
+
+@page {
+  size: A4;
+  margin: 12mm;
+}
 
 @media print {
-  .bar { display: none; }
-  body { background: #fff; font-size: 11pt; }
+  .bar, .no-print, .filters, .search, .foot { display: none; }
+  body { background: #fff; font-size: 10pt; color: #000; }
+  main { padding: 0; }
+
   .items { border: 0; }
   .item { break-inside: avoid; }
   .thumb { display: none; }
+
+  .sheet { margin: 0; padding: 0; border: 0; border-radius: 0; }
+  .sheet-title { font-size: 12pt; }
+
+  /* Keep a group's heading with at least some of its rows, and repeat the
+     column headings when a long group runs onto the next page. */
+  .sheet-group { break-after: avoid; margin: 10pt 0 2pt; }
+  .sheet-table { break-inside: auto; }
+  .sheet-table thead { display: table-header-group; }
+  .sheet-table tr { break-inside: avoid; }
+  /* Tight enough that a normal week is two pages, loose enough to tick. */
+  .sheet-table td, .sheet-table th { border-color: #999; padding: 0.18rem 0.3rem; }
+
+  .col-price { border-bottom: 1px solid #999; }
 }

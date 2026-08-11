@@ -30,7 +30,13 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
     costs a few milliseconds per write, and this app does perhaps fifty writes
     a day, so the trade is free.
     """
-    conn = sqlite3.connect(path)
+    # check_same_thread=False because FastAPI runs a sync route and the
+    # dependency that opened its connection on worker threads, and under two
+    # iPads at once those are not guaranteed to be the same worker. The
+    # connection is still only ever used by one request at a time — app/db.py
+    # opens it per request and closes it on the way out — so this relaxes a
+    # check that does not apply here rather than allowing real sharing.
+    conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = FULL")
     conn.execute("PRAGMA foreign_keys = ON")

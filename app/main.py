@@ -1,91 +1,42 @@
 """Track the Date — Tecoma.
 
-The FastAPI application. This is deliberately a small starting point, not the
-finished app: it proves the whole stack works together (Python -> SQLite ->
-Jinja2 -> browser) and gives the home screen something real to grow from.
+The FastAPI application: wiring only. Every screen lives in app/routes/, the
+templates and helpers in app/views.py, and who's signed in in app/auth.py.
 
-Build the rest one screen at a time. See SPEC.md section 3 for the list, and
-CLAUDE.md for the rules. Route modules go in app/routes/ as they appear.
+See SPEC.md for the design and CLAUDE.md for the working rules.
 """
 
 from __future__ import annotations
 
-import datetime as dt
-import sqlite3
 import sys
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.db import get_conn  # noqa: E402
+from app.auth import session_middleware  # noqa: E402
+from app.routes import home, login, products, scan, settings, sheet  # noqa: E402
+from app.views import au_date  # noqa: E402,F401  (re-exported: the tests import it from here)
 
 app = FastAPI(title="Track the Date — Tecoma", docs_url=None, redoc_url=None)
+
+# Signed-in-or-redirect, applied to everything. Routes never re-check.
+app.middleware("http")(session_middleware)
+
+PHOTOS = ROOT / "data" / "photos"
+PHOTOS.mkdir(parents=True, exist_ok=True)
+
 app.mount("/static", StaticFiles(directory=ROOT / "app" / "static"), name="static")
-templates = Jinja2Templates(directory=ROOT / "app" / "templates")
+# Photos are files on disk, not rows — see SPEC §5. Served from the same path
+# that is stored on the product, so a template can use src="/{{ image_path }}".
+app.mount("/data/photos", StaticFiles(directory=PHOTOS), name="photos")
 
-
-def au_date(value: str | dt.date) -> str:
-    """'2026-08-14' -> '14 Aug 2026'. Australian format, never US.
-
-    Built by hand rather than with strftime('%-d'), which is not portable —
-    that format code does not exist on Windows, and this runs on Windows.
-    """
-    d = dt.date.fromisoformat(value) if isinstance(value, str) else value
-    if not isinstance(d, dt.date):
-        return str(value)
-    return f"{d.day} {d:%b %Y}"
-
-
-templates.env.filters["au_date"] = au_date
-
-
-def setting(conn, key: str, default: str) -> str:
-    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-    return row["value"] if row else default
-
-
-@app.get("/")
-def home(request: Request, conn: sqlite3.Connection = Depends(get_conn)):
-    """What's due. The first thing anyone sees."""
-    window = int(setting(conn, "expiry_window_days", "7"))
-    today = dt.date.today()
-    cutoff = (today + dt.timedelta(days=window)).isoformat()
-
-    rows = conn.execute(
-        """SELECT b.id, b.expiry_date, b.status,
-                  p.name, p.barcode, p.image_path,
-                  c.name AS category
-             FROM batches b
-             JOIN products p ON p.id = b.product_id
-        LEFT JOIN categories c ON c.id = p.category_id
-            WHERE b.status IN ('active', 'discounted')
-              AND b.expiry_date <= ?
-         ORDER BY b.expiry_date, p.name""",
-        (cutoff,),
-    ).fetchall()
-
-    today_iso = today.isoformat()
-    overdue = [r for r in rows if r["expiry_date"] < today_iso]
-    due = [r for r in rows if r["expiry_date"] >= today_iso]
-
-    return templates.TemplateResponse(
-        request,
-        "home.html",
-        {
-            "shop_name": setting(conn, "shop_name", "BP Tecoma"),
-            "window": window,
-            "today": today,
-            "overdue": overdue,
-            "due": due,
-            "total_products": conn.execute(
-                "SELECT COUNT(*) FROM products").fetchone()[0],
-            "total_live": conn.execute(
-                "SELECT COUNT(*) FROM batches WHERE status IN "
-                "('active','discounted')").fetchone()[0],
-        },
-    )
+app.include_router(login.router)
+app.include_router(home.router)
+app.include_router(scan.router)
+app.include_router(products.router)
+app.include_router(sheet.router)
+app.include_router(settings.router)

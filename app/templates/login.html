@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+
+{% block content %}
+<div class="pad">
+
+  {% if not staff %}
+
+    <h1 class="pad-title">No staff yet</h1>
+    <p class="note">
+      Nobody can sign in until at least one person exists. On the laptop, run:
+    </p>
+    <p class="note"><code>python scripts/add_user.py "Your Name" 1234</code></p>
+
+  {% elif person %}
+
+    <h1 class="pad-title">{{ person.name }}</h1>
+
+    {% if message %}<p class="message">{{ message }}</p>{% endif %}
+
+    <form method="post" action="/login" id="pinform">
+      <input type="hidden" name="user_id" value="{{ person.id }}">
+      <input class="pin" id="pin" name="pin" type="password" inputmode="numeric"
+             autocomplete="off" maxlength="4" placeholder="••••" required
+             aria-label="Four digit PIN" autofocus>
+
+      <div class="keys" id="keys">
+        {% for n in [1, 2, 3, 4, 5, 6, 7, 8, 9] %}
+          <button type="button" class="key" data-digit="{{ n }}">{{ n }}</button>
+        {% endfor %}
+        <button type="button" class="key key-quiet" data-action="clear">Clear</button>
+        <button type="button" class="key" data-digit="0">0</button>
+        <button type="button" class="key key-quiet" data-action="back">&larr;</button>
+      </div>
+
+      <button class="btn btn-wide" type="submit">Sign in</button>
+    </form>
+
+    <p class="note"><a href="/login">Not {{ person.name }}?</a></p>
+
+  {% else %}
+
+    <h1 class="pad-title">Who's this?</h1>
+    <ul class="who">
+      {% for s in staff %}
+        <li><a class="btn btn-wide" href="/login?user={{ s.id }}">{{ s.name }}</a></li>
+      {% endfor %}
+    </ul>
+
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+  {% if person %}<script src="/static/js/keypad.js"></script>{% endif %}
+{% endblock %}

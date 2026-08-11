@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="form-wrap form-wrap-wide">
+
+  {% if message %}<p class="message">{{ message }}</p>{% endif %}
+
+  <div class="card">
+    <div class="known">
+      {% if product.image_path %}
+        <img class="thumb thumb-big" src="{{ photo_url(product.image_path) }}" alt="">
+      {% else %}
+        <span class="thumb thumb-big thumb-empty" aria-hidden="true"></span>
+      {% endif %}
+      <span>
+        <span class="known-name">{{ product.name }}</span>
+        <span class="item-meta">{{ product.barcode }}</span>
+      </span>
+    </div>
+
+    <label class="label" for="category">Category <span class="hint">optional</span></label>
+    <form method="post" action="/products/{{ product.id }}/category" class="row-form">
+      <input class="field" id="category" name="category" list="category-list"
+             value="{{ product.category_name or '' }}" autocomplete="off"
+             placeholder="Type or pick">
+      <datalist id="category-list">
+        {% for c in categories %}<option value="{{ c.name }}">{% endfor %}
+      </datalist>
+      <button class="btn btn-quiet" type="submit">Save</button>
+    </form>
+
+    {# Optional, and it backfills: a photo added now shows on every batch of
+       this barcode, including ones recorded months ago. #}
+    <label class="label" for="photo">
+      Photo <span class="hint">{% if product.image_path %}replaces the current one{% else %}optional{% endif %}</span>
+    </label>
+    <form class="row-form" id="photo-form" method="post"
+          action="/products/{{ product.id }}/photo" enctype="multipart/form-data"
+          data-done="/products/{{ product.id }}">
+      <input class="field" type="file" id="photo" name="photo" accept="image/*">
+      <button class="btn btn-quiet" type="submit">Save</button>
+      {# Shown by photo.js only where a camera can actually be opened: the
+         laptop on localhost, or an iPad once the certificates are in. On an
+         iPad the file button already offers Take Photo. #}
+      <button class="btn btn-quiet" type="button" id="camera" hidden>Camera</button>
+    </form>
+
+    <div id="camera-panel" hidden>
+      <video id="camera-view" class="camera-view" playsinline muted></video>
+      <div class="row-form">
+        <button class="btn" type="button" id="camera-take">Take photo</button>
+        <button class="btn btn-quiet" type="button" id="camera-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <p class="note">
+      <a class="btn btn-quiet" href="/scan?barcode={{ product.barcode }}">Add another date</a>
+    </p>
+  </div>
+
+  <h2 class="head">Dates &mdash; {{ batches | length }}</h2>
+
+  <ul class="items">
+    {% for b in batches %}
+      <li class="item item-stack{% if b.status in ('pulled', 'sold') %} item-done{% endif %}">
+        <span class="item-body">
+          <span class="item-name">
+            {{ b.expiry_date | au_date }}
+            {% if b.expiry_date < today and b.status in ('active', 'discounted') %}
+              <span class="tag">past date</span>
+            {% endif %}
+            {% if b.status != 'active' %}<span class="tag">{{ resolutions.get(b.status, b.status) }}</span>{% endif %}
+          </span>
+          <span class="item-meta">
+            Added{% if b.added_by_name %} by {{ b.added_by_name }}{% endif %} {{ b.added_at | au_when }}
+            {%- if b.resolved_at %} &middot; {{ resolutions.get(b.status, b.status) }}
+              {%- if b.resolved_by_name %} by {{ b.resolved_by_name }}{% endif %} {{ b.resolved_at | au_when }}
+            {%- endif %}
+          </span>
+          {% if b.note %}<span class="item-meta">{{ b.note }}</span>{% endif %}
+        </span>
+
+        {% if b.status in ('active', 'discounted') %}
+          <form class="actions" method="post"
+                action="/products/{{ product.id }}/batches/{{ b.id }}">
+            {% if b.status == 'active' %}
+              <button class="btn btn-quiet btn-small" name="status" value="discounted">Discounted</button>
+            {% endif %}
+            <button class="btn btn-quiet btn-small" name="status" value="sold">Sold</button>
+            <button class="btn btn-quiet btn-small" name="status" value="pulled">Pulled</button>
+          </form>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <p class="note">Nothing is deleted. Pulled and sold dates stay here so waste can be reviewed.</p>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/photo.js"></script>
+{% endblock %}

@@ -10,13 +10,22 @@
 <body>
   <header class="bar">
     <span class="bar-title">{{ shop_name }}</span>
-    <nav class="bar-nav">
-      <a href="/">Due</a>
-    </nav>
+    {% if user %}
+      <nav class="bar-nav">
+        <a href="/">Due</a>
+        <a href="/scan">Scan</a>
+        <a href="/products">Products</a>
+        <a href="/sheet">Sheet</a>
+        <a href="/settings">Settings</a>
+        <a class="bar-who" href="/logout" title="Sign out">{{ user.name }}</a>
+      </nav>
+    {% endif %}
   </header>
 
   <main>
     {% block content %}{% endblock %}
   </main>
+
+  {% block scripts %}{% endblock %}
 </body>
 </html>

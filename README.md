@@ -9,17 +9,29 @@ Expiry tracker for BP Tecoma. Runs on one shop laptop, reachable from iPads on t
 
 ## What already works
 
-Not a blank slate. Done and verified:
+Every screen in `docs/BACKLOG.md` is built and under test:
 
-- Database schema, with the duplicate guard enforced at index level
-- Importer — 952 products and 2,340 batches loaded from the real beep export
-- `scripts/check_db.py` — 16 checks that enforce the design decisions
-- `scripts/backup.py` — snapshot, prune to 7, restore-tested
-- `app/main.py` — a working home screen showing what's due
-- `tests/` — 39 tests: the screens render, and the locked decisions can't be broken
+- **Sign in** — pick your name, four digits on a keypad. Every write records who did it
+- **Scan & add** — gun-driven; scan, type the date, Enter. Duplicates are caught before insert
+- **Due** — past-date first, then the 7-day window, filtered by category
+- **Products** — search that copes with the real names, and a detail screen with every date on a
+  barcode, its history, and discounted / sold / pulled
+- **Photos** — file or camera, shrunk in the browser, then Pillow to 800px and under 80 KB
+- **Discount sheet** — A4, grouped by category, tick box and a blank price column. Two pages for
+  a normal week
+- **Settings** — categories, staff PINs, the expiry window, and a backup button
 
-Still to build: PIN login, scan & add, photos, search, the weekly print sheet, settings.
-`docs/BACKLOG.md` has them in order, with acceptance criteria.
+Underneath, unchanged: the schema with the duplicate guard at index level, the importer (952
+products and 2,340 batches from the real beep export), `scripts/backup.py`, and
+`scripts/check_db.py`.
+
+- `pytest` — 122 tests: the screens render, and the locked decisions can't be broken
+- `python scripts/check_db.py` — 12 checks against the real database, 16 with `--expect-import`
+
+Still to do before the shop relies on it: **set the real staff names and PINs** (both imported
+accounts are still on the placeholder `1234`), the mkcert step for iPad camera access, and the
+first weekend session. Camera *scanning* in the aisles is deliberately not built yet — it needs
+HTTPS to work on an iPad at all, so it belongs with that step.
 
 > **Where to build:** recommend developing on the Mac and deploying to the shop laptop via git.
 > The laptop runs the app easily, but Claude Code plus a browser plus the app on 8 GB is a slow

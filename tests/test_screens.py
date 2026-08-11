@@ -10,8 +10,91 @@ lists the acceptance criteria each one has to meet.
 
 from __future__ import annotations
 
-from conftest import days
+from conftest import STAFF_NAME, STAFF_PIN, days
 
+
+# --------------------------------------------------------------- signing in
+
+def test_login_lists_active_staff(anon_client, staff):
+    body = anon_client.get("/login").text
+    assert STAFF_NAME in body
+
+
+def test_login_hides_inactive_staff(anon_client, staff, db):
+    db.execute("UPDATE users SET active = 0 WHERE id = ?", (staff["id"],))
+    db.commit()
+    assert STAFF_NAME not in anon_client.get("/login").text
+
+
+def test_login_shows_a_keypad(anon_client, staff):
+    """Big targets, no keyboard needed — one-handed on an iPad."""
+    body = anon_client.get(f"/login?user={staff['id']}").text
+    for digit in "0123456789":
+        assert f'data-digit="{digit}"' in body
+
+
+def test_correct_pin_signs_in_and_lands_on_due(anon_client, staff):
+    response = anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": STAFF_PIN}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert anon_client.get("/").status_code == 200
+
+
+def test_wrong_pin_says_so_plainly(anon_client, staff):
+    response = anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": "9999"}, follow_redirects=False
+    )
+    assert response.status_code == 200            # re-rendered, not redirected
+    assert "did not match" in response.text
+    # Must not leak which half was wrong, and must never echo the PIN back.
+    assert "9999" not in response.text
+    assert anon_client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_wrong_pin_does_not_lock_anybody_out(anon_client, staff):
+    """PINs are accountability, not security. No lockout, by decision."""
+    for _ in range(5):
+        anon_client.post("/login", data={"user_id": staff["id"], "pin": "0000"})
+    response = anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": STAFF_PIN}, follow_redirects=False
+    )
+    assert response.status_code == 303
+
+
+def test_no_session_redirects_to_login(anon_client):
+    for path in ("/", "/scan", "/products", "/sheet", "/settings"):
+        response = anon_client.get(path, follow_redirects=False)
+        assert response.status_code == 303, path
+        assert response.headers["location"] == "/login", path
+
+
+def test_login_and_static_are_reachable_signed_out(anon_client):
+    assert anon_client.get("/login").status_code == 200
+    assert anon_client.get("/static/css/app.css").status_code == 200
+
+
+def test_signed_in_name_is_on_every_page(client):
+    """Proof the user reached the route: writes stamp this id, so it has to be
+    there without the route re-reading the cookie."""
+    assert STAFF_NAME in client.get("/").text
+
+
+def test_logout_clears_the_session(client):
+    response = client.get("/logout", follow_redirects=False)
+    assert response.status_code == 303
+    assert client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_login_page_works_with_no_staff_at_all(anon_client):
+    """A fresh database has nobody in it. The page must still explain itself."""
+    response = anon_client.get("/login")
+    assert response.status_code == 200
+    assert "add_user.py" in response.text
+
+
+# ------------------------------------------------------------------- home
 
 def test_home_renders_when_empty(client):
     """A fresh database is a valid state. The home screen must not need data."""
@@ -89,6 +172,670 @@ def test_dates_are_australian_on_the_page(client, sample):
     """Never US format. 4 Sep, not Sep 4 or 09/04."""
     body = client.get("/").text
     assert _au(days(2)) in body
+
+
+def test_home_filters_by_category(client, sample):
+    body = client.get(f"/?category={sample['cat_id']}").text
+    assert "Monster Ultra Zero 500ml" in body
+    assert "C/RIDGE WATER 1L" not in body
+
+
+def test_home_filters_to_the_uncategorised(client, sample):
+    """A normal state with a filter of its own — and still no 'Uncategorised'
+    row anywhere, because NULL is how it is stored."""
+    body = client.get("/?category=none").text
+    assert "C/RIDGE WATER 1L" in body
+    assert "Monster Ultra Zero 500ml" not in body
+    assert "Uncategorised" not in body
+
+
+def test_home_shows_no_filter_bar_until_a_category_exists(client, db):
+    """The list starts empty and grows by itself. No empty chrome before then."""
+    assert 'class="filters"' not in client.get("/").text
+
+
+def test_home_rows_link_to_the_product(client, sample):
+    assert f'href="/products/{sample["products"]["monster"]}"' in client.get("/").text
+
+
+# ------------------------------------------------------------ scan and add
+
+def test_scan_opens_with_the_cursor_in_the_barcode_field(client):
+    body = client.get("/scan").text
+    assert 'id="barcode"' in body
+    assert "autofocus" in body.split('id="barcode"')[1].split(">")[0]
+
+
+def test_known_barcode_shows_the_product_and_focuses_the_date(client, sample):
+    body = client.get("/scan?barcode=9300601234567").text
+    assert "Monster Ultra Zero 500ml" in body
+    assert 'id="expiry"' in body
+    assert "autofocus" in body.split('id="expiry"')[1].split(">")[0]
+    assert 'id="name"' not in body            # nothing to re-type for a known product
+
+
+def test_unknown_barcode_asks_for_a_name(client, sample):
+    body = client.get("/scan?barcode=9999999999999").text
+    assert 'id="name"' in body
+    assert 'id="expiry"' in body
+
+
+def test_adding_writes_a_batch_stamped_with_the_signed_in_user(client, sample, db, staff):
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300601234567", "expiry_date": days(45)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    row = db.execute(
+        "SELECT b.added_by, b.status, b.quantity FROM batches b "
+        "WHERE b.product_id = ? AND b.expiry_date = ?",
+        (sample["products"]["monster"], days(45)),
+    ).fetchone()
+    assert row is not None
+    assert row["added_by"] == staff["id"]
+    assert row["status"] == "active"
+    assert row["quantity"] == 1
+
+
+def test_adding_an_unknown_barcode_creates_the_product_too(client, db, staff):
+    client.post(
+        "/scan/add",
+        data={"barcode": "9300600000123", "name": "Solo Energy Lemon 500ml",
+              "expiry_date": days(20)},
+    )
+    product = db.execute(
+        "SELECT id, name, category_id, created_by FROM products WHERE barcode = ?",
+        ("9300600000123",),
+    ).fetchone()
+    assert product is not None
+    assert product["name"] == "Solo Energy Lemon 500ml"
+    assert product["category_id"] is None      # no category is a normal state
+    assert product["created_by"] == staff["id"]
+    assert db.execute(
+        "SELECT COUNT(*) FROM batches WHERE product_id = ?", (product["id"],)
+    ).fetchone()[0] == 1
+
+
+def test_duplicate_is_caught_before_insert_with_the_date(client, sample, db):
+    """The core rule. Not a database error, and no offer to raise a quantity."""
+    existing = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["overdue"],)
+    ).fetchone()[0]
+
+    response = client.post(
+        "/scan/add", data={"barcode": "9300601234567", "expiry_date": existing}
+    )
+    assert response.status_code == 200
+    assert f"Already tracked — expires {_au(existing)}" in response.text
+    assert "quantity" not in response.text.lower()
+    assert "IntegrityError" not in response.text
+
+    assert db.execute(
+        "SELECT COUNT(*) FROM batches WHERE product_id = ? AND expiry_date = ?",
+        (sample["products"]["monster"], existing),
+    ).fetchone()[0] == 1
+
+
+def test_a_duplicate_still_keeps_the_category_that_was_typed(client, sample, db):
+    """Proof the app checks before inserting rather than letting the index
+    raise: an IntegrityError would roll the category back with it."""
+    duplicate_date = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["due_soon"],)
+    ).fetchone()[0]
+
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300609876543", "category": "Water", "expiry_date": duplicate_date},
+    )
+    assert "Already tracked" in response.text
+    assert db.execute(
+        """SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
+            WHERE p.barcode = ?""",
+        ("9300609876543",),
+    ).fetchone()[0] == "Water"
+
+
+def test_a_date_freed_up_by_a_resolved_batch_is_accepted(client, sample, db):
+    """The pulled batch on that date is history. The date can come round again."""
+    freed = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+    ).fetchone()[0]
+
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300601111111", "expiry_date": freed},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert db.execute(
+        "SELECT COUNT(*) FROM batches WHERE product_id = ? AND expiry_date = ? "
+        "AND status = 'active'",
+        (sample["products"]["curly"], freed),
+    ).fetchone()[0] == 1
+
+
+def test_after_saving_the_form_is_back_at_the_barcode_field(client, sample):
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300601234567", "expiry_date": days(46)},
+        follow_redirects=True,
+    )
+    body = response.text
+    assert "Saved" in body
+    assert 'id="barcode"' in body
+    assert 'id="expiry"' not in body          # nothing half-finished left on screen
+
+
+def test_a_rejected_date_does_not_lose_the_typed_name(client):
+    body = client.post(
+        "/scan/add",
+        data={"barcode": "9300600000999", "name": "Chobani Greek Yoghurt 170g",
+              "expiry_date": ""},
+    ).text
+    assert "Chobani Greek Yoghurt 170g" in body
+    assert "Enter the expiry date." in body
+
+
+def test_a_mistyped_year_is_refused(client, sample):
+    body = client.post(
+        "/scan/add", data={"barcode": "9300601234567", "expiry_date": "0226-09-14"}
+    ).text
+    assert "Check the year" in body
+
+
+def test_scan_never_renders_a_us_date(client, sample, db):
+    existing = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["overdue"],)
+    ).fetchone()[0]
+    body = client.post(
+        "/scan/add", data={"barcode": "9300601234567", "expiry_date": existing}
+    ).text
+    assert "/" not in body.split("Already tracked")[1].split("<")[0]
+
+
+# ------------------------------------------------------- inline categories
+
+def test_category_input_suggests_the_existing_ones(client, sample):
+    body = client.get("/scan?barcode=9300609876543").text
+    assert '<datalist id="category-list">' in body
+    assert '<option value="Energy Drinks">' in body
+
+
+def test_typing_a_new_category_creates_it_against_the_product(client, db, staff):
+    client.post(
+        "/scan/add",
+        data={"barcode": "9300600000456", "name": "Bulla Ice Cream 2L",
+              "category": "Frozen", "expiry_date": days(30)},
+    )
+    category = db.execute(
+        "SELECT id, created_by FROM categories WHERE name = 'Frozen'"
+    ).fetchone()
+    assert category is not None
+    assert category["created_by"] == staff["id"]
+    assert db.execute(
+        "SELECT category_id FROM products WHERE barcode = ?", ("9300600000456",)
+    ).fetchone()[0] == category["id"]
+
+
+def test_a_case_variant_picks_the_existing_category(client, sample, db):
+    """Typing 'energy drinks' must find 'Energy Drinks', not collide with it."""
+    client.post(
+        "/scan/add",
+        data={"barcode": "9300609876543", "category": "energy drinks",
+              "expiry_date": days(31)},
+    )
+    assert db.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 1
+    assert db.execute(
+        "SELECT category_id FROM products WHERE barcode = ?", ("9300609876543",)
+    ).fetchone()[0] == sample["cat_id"]
+
+
+def test_a_category_covers_batches_recorded_earlier(client, sample, db):
+    """It attaches to the barcode, so it reaches back over old batches."""
+    client.post(
+        "/scan/add",
+        data={"barcode": "9300601111111", "category": "Biscuits", "expiry_date": days(32)},
+    )
+    rows = db.execute(
+        """SELECT c.name FROM batches b
+             JOIN products p ON p.id = b.product_id
+             JOIN categories c ON c.id = p.category_id
+            WHERE b.product_id = ?""",
+        (sample["products"]["curly"],),
+    ).fetchall()
+    assert len(rows) == 3                       # every batch of that barcode, old ones too
+    assert all(r["name"] == "Biscuits" for r in rows)
+
+
+def test_a_blank_category_is_never_complained_about(client, sample, db):
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300609876543", "category": "  ", "expiry_date": days(33)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert db.execute(
+        "SELECT category_id FROM products WHERE barcode = ?", ("9300609876543",)
+    ).fetchone()[0] is None
+
+
+def test_no_uncategorised_option_is_offered(client, sample):
+    assert "Uncategorised" not in client.get("/scan?barcode=9300609876543").text
+
+
+# ------------------------------------------------- product list and detail
+
+def test_product_list_shows_everything_by_default(client, sample):
+    body = client.get("/products").text
+    assert "Monster Ultra Zero 500ml" in body
+    assert "C/RIDGE WATER 1L" in body
+    assert "Arnott" in body
+
+
+def test_search_is_case_insensitive(client, sample):
+    assert "Monster Ultra Zero 500ml" in client.get("/products?q=MONSTER").text
+    assert "Monster Ultra Zero 500ml" in client.get("/products?q=monster").text
+
+
+def test_search_tolerates_surrounding_whitespace(client, sample):
+    """Stored names have trailing spaces; typed queries have stray ones."""
+    body = client.get("/products?q=%20%20water%20%20").text
+    assert "C/RIDGE WATER 1L" in body
+
+
+def test_search_finds_the_abbreviated_name(client, sample):
+    """'cool ridge' cannot substring-match 'C/RIDGE WATER 1L' — the shop's
+    abbreviation is not derivable — so the word that does match carries it."""
+    body = client.get("/products?q=cool+ridge").text
+    assert "C/RIDGE WATER 1L" in body
+
+
+def test_search_handles_a_curly_apostrophe_either_way(client, sample):
+    """The export has Arnott’s with a curly one. Nobody types that."""
+    assert "Tim Tam" in client.get("/products?q=arnott%27s").text
+    assert "Tim Tam" in client.get("/products?q=arnott%E2%80%99s").text
+
+
+def test_search_by_barcode(client, sample):
+    body = client.get("/products?q=9300609876543").text
+    assert "C/RIDGE WATER 1L" in body
+    assert "Monster Ultra Zero 500ml" not in body
+
+
+def test_search_that_matches_nothing_says_so(client, sample):
+    assert "Nothing matches that." in client.get("/products?q=zzzzzz").text
+
+
+def test_product_list_filters_by_category(client, sample):
+    body = client.get(f"/products?category={sample['cat_id']}").text
+    assert "Monster Ultra Zero 500ml" in body
+    assert "C/RIDGE WATER 1L" not in body
+
+
+def test_product_list_sorts_by_soonest_expiry(client, sample):
+    """Monster is 4 days overdue, the water is due in 2, the Tim Tams in 7."""
+    body = client.get("/products").text
+    assert body.index("Monster Ultra Zero") < body.index("C/RIDGE WATER") < body.index("Tim Tam")
+
+
+def test_product_detail_shows_every_batch_and_who_added_them(client, sample):
+    body = client.get(f"/products/{sample['products']['curly']}").text
+    assert _au(days(7)) in body        # live
+    assert _au(days(1)) in body        # pulled — history stays visible
+    assert "Mohit" in body             # the audit trail, not the signed-in user
+
+
+def test_product_detail_404s_for_an_unknown_id(client, sample):
+    assert client.get("/products/999999").status_code == 404
+
+
+def test_resolving_a_batch_records_who_and_when(client, sample, db, staff):
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}",
+        data={"status": "pulled"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    row = db.execute(
+        "SELECT status, resolved_by, resolved_at FROM batches WHERE id = ?", (batch,)
+    ).fetchone()
+    assert row["status"] == "pulled"
+    assert row["resolved_by"] == staff["id"]
+    assert row["resolved_at"] is not None
+
+
+def test_a_resolved_batch_leaves_the_due_list(client, sample):
+    batch = sample["batches"]["due_soon"]
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}",
+                data={"status": "sold"})
+    assert "C/RIDGE WATER 1L" not in client.get("/").text
+
+
+def test_a_discounted_batch_is_still_on_the_shelf(client, sample, db):
+    """Discounted is a resolution but not a removal — it still shows as due."""
+    batch = sample["batches"]["due_soon"]
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}",
+                data={"status": "discounted"})
+    assert "C/RIDGE WATER 1L" in client.get("/").text
+
+
+def test_nothing_is_hard_deleted(client, sample, db):
+    before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    client.post(f"/products/{sample['products']['shouty']}/batches/"
+                f"{sample['batches']['due_soon']}", data={"status": "pulled"})
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before
+
+
+def test_an_unknown_resolution_is_refused(client, sample):
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{sample['batches']['due_soon']}",
+        data={"status": "binned"},
+    )
+    assert response.status_code == 400
+
+
+def test_category_can_be_set_from_the_product_screen(client, sample, db):
+    client.post(f"/products/{sample['products']['shouty']}/category",
+                data={"category": "Water"})
+    assert db.execute(
+        """SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
+            WHERE p.id = ?""",
+        (sample["products"]["shouty"],),
+    ).fetchone()[0] == "Water"
+
+
+def test_clearing_the_category_is_allowed(client, sample, db):
+    client.post(f"/products/{sample['products']['monster']}/category", data={"category": ""})
+    assert db.execute(
+        "SELECT category_id FROM products WHERE id = ?", (sample["products"]["monster"],)
+    ).fetchone()[0] is None
+
+
+# ----------------------------------------------------------------- photos
+
+def _photo_bytes(width=2000, height=1500, orientation=None) -> bytes:
+    """A JPEG the size an iPad actually produces, optionally rotated by EXIF."""
+    import io
+
+    from PIL import Image
+
+    image = Image.new("RGB", (width, height), (180, 40, 40))
+    for x in range(0, width, 40):           # some detail, so it isn't a flat block
+        for y in range(0, height, 40):
+            image.putpixel((x, y), (20, 90, 200))
+    buffer = io.BytesIO()
+    if orientation:
+        exif = image.getexif()
+        exif[274] = orientation
+        image.save(buffer, "JPEG", exif=exif, quality=95)
+    else:
+        image.save(buffer, "JPEG", quality=95)
+    return buffer.getvalue()
+
+
+def test_uploading_a_photo_attaches_it_to_the_product(client, sample, db, photo_dir):
+    response = client.post(
+        f"/products/{sample['products']['monster']}/photo",
+        files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    stored = db.execute(
+        "SELECT image_path FROM products WHERE id = ?", (sample["products"]["monster"],)
+    ).fetchone()[0]
+    assert stored == "data/photos/9300601234567.jpg"     # keyed to the barcode
+    assert (photo_dir / "9300601234567.jpg").exists()
+
+
+def test_a_photo_is_resized_and_stripped(client, sample, photo_dir):
+    from PIL import Image
+
+    client.post(
+        f"/products/{sample['products']['monster']}/photo",
+        files={"photo": ("counter.jpg", _photo_bytes(orientation=6), "image/jpeg")},
+    )
+    saved = Image.open(photo_dir / "9300601234567.jpg")
+
+    assert saved.format == "JPEG"
+    assert max(saved.size) == 800                        # long edge, SPEC §5
+    assert saved.size == (600, 800), "EXIF orientation 6 means this is portrait"
+    assert not dict(saved.getexif()), "EXIF is stripped — an iPad photo carries GPS"
+    assert (photo_dir / "9300601234567.jpg").stat().st_size < 80 * 1024
+
+
+def test_a_photo_appears_on_batches_recorded_months_ago(client, sample):
+    """It hangs off the barcode, so it backfills everything already recorded."""
+    assert "thumb-empty" in client.get("/").text
+    client.post(
+        f"/products/{sample['products']['monster']}/photo",
+        files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
+    )
+    body = client.get("/").text
+    assert "/data/photos/9300601234567.jpg" in body
+
+
+def test_replacing_a_photo_leaves_no_orphan(client, sample, photo_dir):
+    for _ in range(3):
+        client.post(
+            f"/products/{sample['products']['monster']}/photo",
+            files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
+        )
+    files = [p for p in photo_dir.iterdir() if p.is_file()]
+    assert len(files) == 1, files
+
+
+def test_the_photo_url_changes_when_the_photo_does(client, sample):
+    """Same filename every time, so without a stamp an iPad shows a stale one."""
+    client.post(
+        f"/products/{sample['products']['monster']}/photo",
+        files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
+    )
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert "9300601234567.jpg?v=" in body
+    assert "?v=0" not in body
+
+
+def test_a_file_that_is_not_an_image_is_refused_politely(client, sample, db):
+    response = client.post(
+        f"/products/{sample['products']['monster']}/photo",
+        files={"photo": ("notes.txt", b"this is not a photograph", "text/plain")},
+    )
+    assert response.status_code == 200
+    assert "not an image" in response.text
+    assert db.execute(
+        "SELECT image_path FROM products WHERE id = ?", (sample["products"]["monster"],)
+    ).fetchone()[0] is None
+
+
+def test_the_photo_form_offers_a_file_and_a_camera(client, sample):
+    """The file input covers uploads and Take Photo on iOS; the camera button
+    is unhidden by script only where getUserMedia can actually work."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert 'type="file"' in body and 'accept="image/*"' in body
+    assert 'id="camera"' in body
+    js = client.get("/static/js/photo.js").text
+    assert "getUserMedia" in js
+    assert "canvas" in js               # shrunk in the browser before upload
+
+
+def test_a_product_with_no_photo_is_a_normal_state(client, sample):
+    """Nothing in the add path waits for a camera."""
+    for path in ("/", "/products", f"/products/{sample['products']['curly']}"):
+        assert "thumb-empty" in client.get(path).text
+
+
+# --------------------------------------------------- weekly discount sheet
+
+def test_sheet_lists_what_is_due_in_the_window(client, sample, db):
+    body = client.get("/sheet").text
+    assert "C/RIDGE WATER 1L" in body                  # due in 2 days
+    assert "Monster Ultra Zero 500ml" in body          # past date, still on the shelf
+    far_off = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["outside"],)
+    ).fetchone()[0]
+    assert _au(far_off) not in body                    # 30 days out, not this week
+
+
+def test_sheet_range_is_adjustable(client, sample, db):
+    far_off = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["outside"],)
+    ).fetchone()[0]
+    assert _au(far_off) in client.get("/sheet?days=45").text
+
+
+def test_sheet_groups_by_category_with_uncategorised_last(client, sample):
+    body = client.get("/sheet").text
+    assert body.index("Energy Drinks") < body.index("No category")
+    assert "Uncategorised" not in body
+
+
+def test_sheet_sorts_by_date_within_a_group(client, sample, db):
+    """Two uncategorised items: the water in 2 days, the Tim Tams in 7."""
+    body = client.get("/sheet").text
+    assert body.index("C/RIDGE WATER 1L") < body.index("Tim Tam")
+
+
+def test_sheet_has_a_tick_box_and_a_blank_price_column(client, sample):
+    body = client.get("/sheet").text
+    assert 'class="tick"' in body
+    assert "Price" in body
+    assert '<td class="col-price"></td>' in body       # blank, for a pen
+
+
+def test_sheet_shows_the_barcode_on_every_line(client, sample):
+    body = client.get("/sheet").text
+    assert "9300609876543" in body
+
+
+def test_sheet_hides_resolved_batches(client, sample, db):
+    resolved = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+    ).fetchone()[0]
+    assert _au(resolved) not in client.get("/sheet").text
+
+
+def test_sheet_survives_an_absurd_range(client, sample):
+    assert client.get("/sheet?days=99999").status_code == 200
+    assert client.get("/sheet?days=0").status_code == 200
+
+
+def test_sheet_prints_without_the_navigation(client, sample):
+    """A4 print CSS: no nav, no chrome, no toner-eating backgrounds."""
+    css = client.get("/static/css/app.css").text
+    assert "@page" in css and "size: A4" in css
+    assert ".bar, .no-print" in css
+
+
+# --------------------------------------------------------------- settings
+
+def test_settings_opens_for_anyone_signed_in(client):
+    """No admin tier, no manager PIN — everyone gets the same app."""
+    response = client.get("/settings")
+    assert response.status_code == 200
+    for word in ("Expiry window", "Categories", "Staff", "Backup"):
+        assert word in response.text
+
+
+def test_the_expiry_window_can_be_changed_and_the_screens_follow(client, sample, db):
+    """It is a setting precisely so this does not need a code change."""
+    assert "Arnott" in client.get("/").text            # 7 days out, inside the window
+    client.post("/settings/window", data={"days": 3})
+    assert db.execute(
+        "SELECT value FROM settings WHERE key = 'expiry_window_days'"
+    ).fetchone()[0] == "3"
+    assert "Arnott" not in client.get("/").text
+    assert "Due within 3 days" in client.get("/").text
+
+
+def test_an_absurd_window_is_clamped_not_crashed(client, db):
+    client.post("/settings/window", data={"days": 100000})
+    assert client.get("/").status_code == 200
+
+
+def test_a_category_can_be_added_here(client, db, staff):
+    client.post("/settings/categories", data={"name": "Chocolate"})
+    row = db.execute("SELECT created_by FROM categories WHERE name = 'Chocolate'").fetchone()
+    assert row is not None and row["created_by"] == staff["id"]
+
+
+def test_adding_a_case_variant_category_is_refused_politely(client, sample):
+    body = client.post(
+        "/settings/categories", data={"name": "ENERGY DRINKS"}, follow_redirects=True
+    ).text
+    assert "already a category with that name" in body
+    assert "IntegrityError" not in body
+
+
+def test_renaming_a_category_reaches_every_product_in_it(client, sample, db):
+    client.post(f"/settings/categories/{sample['cat_id']}", data={"name": "Energy"})
+    assert db.execute(
+        """SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
+            WHERE p.id = ?""",
+        (sample["products"]["monster"],),
+    ).fetchone()[0] == "Energy"
+
+
+def test_staff_can_be_added_and_can_then_sign_in(client, anon_client, db):
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+    new_id = db.execute("SELECT id FROM users WHERE name = 'Sarah'").fetchone()[0]
+
+    client.get("/logout")
+    response = anon_client.post(
+        "/login", data={"user_id": new_id, "pin": "4821"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+
+
+def test_a_pin_that_is_not_four_digits_is_refused(client, db):
+    body = client.post(
+        "/settings/staff", data={"name": "Bad PIN", "pin": "12"}, follow_redirects=True
+    ).text
+    assert "exactly 4 digits" in body
+    assert db.execute("SELECT COUNT(*) FROM users WHERE name = 'Bad PIN'").fetchone()[0] == 0
+
+
+def test_resetting_a_pin_changes_which_one_works(client, anon_client, staff):
+    client.post(f"/settings/staff/{staff['id']}/pin", data={"pin": "5150"})
+    client.get("/logout")
+
+    assert anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": STAFF_PIN}, follow_redirects=False
+    ).status_code == 200                                  # the old one no longer works
+    assert anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": "5150"}, follow_redirects=False
+    ).status_code == 303
+
+
+def test_backup_runs_on_demand_and_is_reported(client, db_path):
+    body = client.get("/settings").text
+    assert "No backup has been taken yet" in body
+
+    client.post("/settings/backup")
+    snapshots = list((db_path.parent / "backups").glob("tecoma-*.db"))
+    assert len(snapshots) == 1
+    assert "Last backup:" in client.get("/settings").text
+
+
+def test_backup_snapshots_the_database_the_app_is_using(client, db_path, sample):
+    """Never data/tecoma.db while a test is running — it follows the connection."""
+    from scripts.init_db import DB_PATH, connect
+
+    client.post("/settings/backup")
+    snapshot = next((db_path.parent / "backups").glob("tecoma-*.db"))
+    assert snapshot.parent != DB_PATH.parent
+
+    copy = connect(snapshot)
+    assert copy.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 3
+    copy.close()
+
+
+def test_settings_has_no_role_or_admin_anything(client):
+    body = client.get("/settings").text.lower()
+    for word in ("admin", "manager", "role", "permission"):
+        assert word not in body
 
 
 def test_static_assets_are_served(client):

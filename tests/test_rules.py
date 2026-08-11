@@ -16,6 +16,7 @@ import sqlite3
 import pytest
 
 from app.main import au_date
+from app.views import au_when
 from app.security import hash_pin, verify_pin
 from conftest import days
 
@@ -153,6 +154,23 @@ def test_au_date_handles_two_digit_days():
 def test_au_date_is_never_us_format():
     """4 Sep 2026, never 9/4/2026 — the failure mode is silent and dangerous."""
     assert "/" not in au_date("2026-09-04")
+
+
+def test_au_when_is_australian_and_local():
+    """Stamps are stored UTC by datetime('now'); the shop reads GMT+10."""
+    assert au_when("2026-09-04 03:11:06") == "4 Sep 2026, 1:11 pm"
+    assert au_when("2026-01-01 14:05:00") == "2 Jan 2026, 12:05 am"
+
+
+def test_au_when_has_no_leading_zero_hour():
+    """The Windows trap again — '%-I' does not exist there either."""
+    assert au_when("2026-09-04 22:30:00").endswith("8:30 am")
+    assert ", 08:" not in au_when("2026-09-04 22:30:00")
+
+
+def test_au_when_survives_an_empty_stamp():
+    """resolved_at is NULL for everything nobody has resolved."""
+    assert au_when(None) == ""
 
 
 # ------------------------------------------------------------------- integrity

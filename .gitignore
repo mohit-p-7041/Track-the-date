@@ -5,6 +5,9 @@ data/tecoma.db-shm
 data/photos/
 data/backups/
 
+# The session signing key, generated on first run. Per-machine, not shared.
+data/session.key
+
 # Certificates
 certs/
 *.pem

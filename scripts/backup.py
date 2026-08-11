@@ -31,10 +31,11 @@ PHOTO_DIR = ROOT / "data" / "photos"
 KEEP = 7
 
 
-def backup_database(stamp: str) -> Path:
+def backup_database(stamp: str, db_path: Path = DB_PATH,
+                    backup_dir: Path = BACKUP_DIR) -> Path:
     """Consistent snapshot of the database, safe to take while the app runs."""
-    target = BACKUP_DIR / f"tecoma-{stamp}.db"
-    src = connect(DB_PATH)
+    target = backup_dir / f"tecoma-{stamp}.db"
+    src = connect(db_path)
     dst = sqlite3.connect(target)
     try:
         src.backup(dst)
@@ -47,12 +48,14 @@ def backup_database(stamp: str) -> Path:
 PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def backup_photos() -> tuple[int, int]:
+def backup_photos(photo_dir: Path = PHOTO_DIR, backup_dir: Path = BACKUP_DIR) -> tuple[int, int]:
     """Copy photos that are new or newer than the backed-up copy."""
-    mirror = BACKUP_DIR / "photos"
+    mirror = backup_dir / "photos"
     mirror.mkdir(parents=True, exist_ok=True)
     copied = skipped = 0
-    for photo in PHOTO_DIR.glob("*"):
+    if not photo_dir.exists():
+        return 0, 0
+    for photo in photo_dir.glob("*"):
         if not photo.is_file() or photo.suffix.lower() not in PHOTO_SUFFIXES:
             continue
         dest = mirror / photo.name
@@ -64,14 +67,42 @@ def backup_photos() -> tuple[int, int]:
     return copied, skipped
 
 
-def prune(keep: int = KEEP) -> int:
+def prune(keep: int = KEEP, backup_dir: Path = BACKUP_DIR) -> int:
     """Keep the most recent N database snapshots."""
-    snaps = sorted(BACKUP_DIR.glob("tecoma-*.db"), key=lambda p: p.stat().st_mtime)
+    snaps = sorted(backup_dir.glob("tecoma-*.db"), key=lambda p: p.stat().st_mtime)
     removed = 0
     for old in snaps[:-keep] if len(snaps) > keep else []:
         old.unlink()
         removed += 1
     return removed
+
+
+def last_backup(backup_dir: Path = BACKUP_DIR) -> Path | None:
+    """The most recent snapshot, or None if nothing has been backed up yet."""
+    snaps = sorted(backup_dir.glob("tecoma-*.db"), key=lambda p: p.stat().st_mtime)
+    return snaps[-1] if snaps else None
+
+
+def run(db_path: Path = DB_PATH, backup_dir: Path = BACKUP_DIR,
+        photo_dir: Path = PHOTO_DIR, keep: int = KEEP) -> dict:
+    """Take a backup. Used by the CLI above and by the settings screen.
+
+    The paths are arguments rather than constants so the app can back up
+    whichever database it is actually serving — which is also what keeps a
+    test run from snapshotting the shop's real data.
+    """
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+    db_file = backup_database(stamp, db_path, backup_dir)
+    copied, skipped = backup_photos(photo_dir, backup_dir)
+    removed = prune(keep, backup_dir)
+    return {
+        "file": db_file,
+        "size": db_file.stat().st_size,
+        "copied": copied,
+        "skipped": skipped,
+        "removed": removed,
+    }
 
 
 def main() -> int:
@@ -85,13 +116,10 @@ def main() -> int:
             print("No database to back up yet.")
         return 0
 
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M")
-
     try:
-        db_file = backup_database(stamp)
-        copied, skipped = backup_photos()
-        removed = prune(args.keep)
+        result = run(keep=args.keep)
+        db_file, copied = result["file"], result["copied"]
+        skipped, removed = result["skipped"], result["removed"]
     except Exception as exc:                      # noqa: BLE001
         # Never stop the app starting because a backup failed — but be loud.
         print(f"  WARNING: backup failed — {exc}")

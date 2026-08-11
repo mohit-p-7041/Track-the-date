@@ -6,23 +6,35 @@
     {% for r in rows %}
       <li class="item">
         {% if r.image_path %}
-          <img class="thumb" src="/{{ r.image_path }}" alt="">
+          <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
         {% else %}
           <span class="thumb thumb-empty" aria-hidden="true"></span>
         {% endif %}
-        <span class="item-body">
+        <a class="item-body" href="/products/{{ r.product_id }}">
           <span class="item-date">{{ r.expiry_date | au_date }}</span>
           <span class="item-name">{{ r.name }}</span>
           <span class="item-meta">
             {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
           </span>
-        </span>
+        </a>
       </li>
     {% endfor %}
   </ul>
 {% endmacro %}
 
 {% block content %}
+
+  {% if categories %}
+    <nav class="filters">
+      <a class="chip{% if not selected %} chip-on{% endif %}" href="/">All</a>
+      {% for c in categories %}
+        <a class="chip{% if selected == c.id|string %} chip-on{% endif %}"
+           href="/?category={{ c.id }}">{{ c.name }}</a>
+      {% endfor %}
+      <a class="chip{% if selected == 'none' %} chip-on{% endif %}"
+         href="/?category=none">No category</a>
+    </nav>
+  {% endif %}
 
   {% if overdue %}
     <h2 class="head head-overdue">Past date &mdash; {{ overdue | length }}</h2>

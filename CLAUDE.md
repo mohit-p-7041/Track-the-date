@@ -49,16 +49,20 @@ These were considered and settled. Don't "improve" them into something else.
 ```
 start.bat       double-click launcher; picks HTTP or HTTPS automatically
 app/
-  main.py         FastAPI app — currently just the home screen, grow it from here
+  main.py         FastAPI app — wiring only: middleware, mounts, routers
   db.py           get_conn dependency — the only way a route opens the database
+  auth.py         the session cookie and the signed-in-or-redirect middleware
+  views.py        templates, au_date / au_when / photo_url, and render()
+  catalogue.py    shared product/category/batch logic — the duplicate rule lives here
+  photos.py       Pillow compression and where photo files go
   schema.sql      tables and indexes
   seed.sql        settings only; no categories are seeded by design
   security.py     PIN hashing
-  routes/         one module per area as they appear (scan, products, sheet, settings)
-  templates/      Jinja2 — base.html, home.html
-  static/         css, js, vendor
+  routes/         one module per area: login, home, scan, products, sheet, settings
+  templates/      Jinja2 — base.html and one per screen
+  static/         css, js (keypad, photo), vendor
 tests/
-  conftest.py     temp-database fixtures; never touches data/tecoma.db
+  conftest.py     temp-database fixtures; never touches data/tecoma.db or data/photos
   test_screens.py routes render and show the right rows
   test_rules.py   the locked decisions, as executable tests
 data/
@@ -86,6 +90,8 @@ pip install -r requirements.txt -r requirements-dev.txt      # dev machine
 pytest                                                       # run before committing
 python scripts/init_db.py                                    # create the database
 python scripts/init_db.py --reset                            # destructive rebuild
+python scripts/add_user.py "Name" 1234                       # first sign-in on a fresh database
+python scripts/add_user.py "Name" 4821 --reset               # forgotten PIN
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
 python scripts/check_db.py                                   # run before committing
@@ -120,6 +126,11 @@ explicitly and update it deliberately.
   `connect()` themselves. It closes the handle even when a route raises, and it's the seam the
   tests use to point the app at a temp database. A route that opens its own connection will read
   the shop's real data during a test run, which makes the suite both wrong and dangerous.
+- **Every screen is behind the PIN.** One middleware in `app/auth.py` either puts the signed-in
+  user on `request.state.user` or redirects to `/login`; only `/login`, `/logout` and `/static/*`
+  are public. A route that writes takes `user: dict = Depends(current_user)` and stamps
+  `added_by` / `resolved_by` from it. In tests, the `client` fixture is signed in and
+  `anon_client` is not — don't reach past the middleware, and don't forge the cookie.
 - **Submit each entry immediately.** Don't build multi-step wizards holding state in the browser.
   The laptop can sleep at any moment, and anything not yet posted is gone.
 - Images: resize client-side before upload, then Pillow to max 800px long edge, JPEG q72, EXIF
@@ -144,8 +155,9 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 39 tests against a temporary database built from `schema.sql` in a temp directory.
-It never touches `data/tecoma.db`, so it's safe to run on the shop laptop.
+**`pytest`** — 122 tests against a temporary database built from `schema.sql` in a temp directory.
+It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
+too, so it's safe to run on the shop laptop.
 
 - `tests/test_screens.py` — routes return 200, render, and show the right rows. This is the layer
   `check_db.py` cannot provide: it catches template errors, wrong queries, off-by-one windows.

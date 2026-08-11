@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Scan{% endblock %}
+
+{% macro category_field(categories, value) %}
+  <label class="label" for="category">Category <span class="hint">optional</span></label>
+  <input class="field" id="category" name="category" list="category-list"
+         value="{{ value }}" autocomplete="off" placeholder="Type or pick">
+  <datalist id="category-list">
+    {% for c in categories %}<option value="{{ c.name }}">{% endfor %}
+  </datalist>
+{% endmacro %}
+
+{% block content %}
+<div class="form-wrap">
+
+  {% if saved %}
+    <p class="saved">Saved &mdash; {{ saved.name }}, {{ saved.expiry_date | au_date }}</p>
+  {% endif %}
+
+  {% if message %}
+    <p class="message">{{ message }}</p>
+  {% endif %}
+
+  {% if not barcode %}
+
+    {# Step one. The gun types the barcode and its own Enter submits this. #}
+    <form class="card" method="get" action="/scan">
+      <label class="label" for="barcode">Barcode</label>
+      <input class="field field-big" id="barcode" name="barcode" autocomplete="off"
+             autocapitalize="off" spellcheck="false" autofocus required>
+      <button class="btn btn-wide" type="submit">Look up</button>
+      <p class="note">Scan with the gun, or type it and press Enter.</p>
+    </form>
+
+  {% elif product %}
+
+    {# Known barcode: nothing to fill in but the date, and it already has focus. #}
+    <form class="card" method="post" action="/scan/add">
+      <input type="hidden" name="barcode" value="{{ barcode }}">
+
+      <div class="known">
+        {% if product.image_path %}
+          <img class="thumb" src="{{ photo_url(product.image_path) }}" alt="">
+        {% else %}
+          <span class="thumb thumb-empty" aria-hidden="true"></span>
+        {% endif %}
+        <span>
+          <span class="known-name">{{ product.name }}</span>
+          <span class="item-meta">
+            {{ product.barcode }}{% if product.category_name %} &middot; {{ product.category_name }}{% endif %}
+          </span>
+        </span>
+      </div>
+
+      {% if not product.category_name %}
+        {{ category_field(categories, typed.category) }}
+      {% endif %}
+
+      <label class="label" for="expiry">Expiry date</label>
+      <input class="field field-big" id="expiry" name="expiry_date" type="date"
+             required autofocus>
+
+      <button class="btn btn-wide" type="submit">Save</button>
+    </form>
+
+  {% else %}
+
+    {# Unknown barcode: the short new-product form. Category and photo are
+       optional and neither blocks the add. #}
+    <form class="card" method="post" action="/scan/add">
+      <input type="hidden" name="barcode" value="{{ barcode }}">
+      <p class="note">New barcode &mdash; {{ barcode }}</p>
+
+      <label class="label" for="name">Name</label>
+      <input class="field" id="name" name="name" value="{{ typed.name }}"
+             autocomplete="off" required autofocus>
+
+      {{ category_field(categories, typed.category) }}
+
+      <label class="label" for="expiry">Expiry date</label>
+      <input class="field field-big" id="expiry" name="expiry_date" type="date" required>
+
+      <button class="btn btn-wide" type="submit">Save</button>
+    </form>
+
+  {% endif %}
+
+  {% if barcode %}
+    <p class="note"><a href="/scan">Scan another</a></p>
+  {% endif %}
+
+</div>
+{% endblock %}
