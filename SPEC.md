@@ -62,7 +62,7 @@ Safari refuses camera access over plain `http://` from a network address, so ais
 an iPad needs HTTPS. Everything else — browsing, searching, entering dates, the print sheet —
 works fine over HTTP, and the laptop's own webcam works on `localhost` either way.
 
-So HTTP is correct for development, and HTTPS is a week-3 task, not a prerequisite. To switch:
+So HTTP is correct for development, and HTTPS is a day-2 task, not a prerequisite. To switch:
 
 ```
 mkcert -key-file certs\key.pem -cert-file certs\cert.pem <laptop-ip>
@@ -278,23 +278,36 @@ Deliberately boring. In eighteen months someone needs to be able to open this an
 
 ## 9. Timeline
 
-One month. Database, schema, importer, backup and checks are already done and verified.
+**Five days, 11–15 August 2026.** Compressed from the original month on 11 Aug: the station needs
+this, and every screen landed in one sitting rather than two weeks.
 
-| Week | Work |
+Database, schema, importer, backup and checks were already done and verified before day 1.
+
+| Day | Work |
 |---|---|
-| 1 | PIN login, scan & add with duplicate check, home screen, inline categories |
-| 2 | Photos + compression, weekly print sheet, search, settings |
-| 3 | HTTPS + iPad certificates, first real weekend scan session with staff |
-| 4 | Fixes from real use, Excel export, training notes |
+| 1 — Tue 11 Aug | **Done.** All seven screens: sign in, scan & add, inline categories, due list, products, photos, discount sheet, settings |
+| 2 — Wed 12 Aug | Real staff names and PINs. HTTPS via mkcert, certificates onto the iPads, camera scanning in the aisles |
+| 3 — Thu 13 Aug | Deploy to the shop laptop, Excel export, training notes for staff |
+| 4 — Fri 14 Aug | Dry run at the counter with the gun and one iPad. Fix what that finds |
+| 5 — Sat 15 Aug | First real weekend scan session with staff |
 
-A usable v1 should exist by the end of week 2. Weeks 3–4 turn it from "works on my machine" into
-something the shop relies on. Keep week 4 genuinely empty — the first staff session always
-surfaces something.
+The order still comes from dependency, not preference. Day 2 is the one that cannot slip: without
+certificates the iPads have no camera, and without real PINs the audit trail says `BP TECOMA` for
+everybody.
+
+**Keep day 5 genuinely empty.** The first staff session always surfaces something, and a day with
+nothing else in it is what turns that from a problem into a fix. This was true of week 4 in the
+month-long plan and is more true now, not less — a shorter schedule removes the slack that used
+to absorb surprises.
+
+What the compression costs, stated plainly: there is no longer a week of real use between "works"
+and "the shop depends on it". The mitigation is that nothing is destructive — every batch is an
+update, backups run at every startup, and the old paper habit still works if a session goes badly.
 
 ### Deferred, deliberately
 
 - **Excel export.** Wanted, not needed to go live — the startup backup already protects the data.
-  Week 4.
+  Day 3.
 - **Quantity per batch.** Column exists at 1, hidden. Pending the manager's view.
 - **Bulk categorisation screen.** Not being built. Categories grow through normal scanning.
 
@@ -315,7 +328,7 @@ All answered 10 Aug 2026.
 | Photos | Optional, added over time, attached to the barcode so they backfill. |
 | Scanning | Both — USB gun at the counter, iPad camera in the aisles. |
 | Alerts | No email. Home screen plus a printable weekly sheet. |
-| Excel export | Wanted, deferred to week 4. |
+| Excel export | Wanted, deferred to day 3. |
 | Operating model | On demand. `start.bat` for a session, close the window after. |
 | Laptop | Acer Aspire A515-51G, Windows 11 Home. See `docs/LAPTOP-NOTES.md`. |
 | UI | Clean, fast, no animation. |

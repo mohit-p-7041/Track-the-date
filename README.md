@@ -2,8 +2,10 @@
 
 Expiry tracker for BP Tecoma. Runs on one shop laptop, reachable from iPads on the shop WiFi.
 
-- `SPEC.md` — what we're building and why
+- `SPEC.md` — what we're building and why, and the five-day timeline
 - `CLAUDE.md` — working rules, read automatically by Claude Code
+- `docs/ITERATION-1.md` — what the first build session did, and what to do next
+- `docs/BACKLOG.md` — the feature list, all of it now built, with acceptance criteria
 - `docs/DATA-NOTES.md` — what's in the old app's export
 - `docs/LAPTOP-NOTES.md` — the shop machine: power settings, firewall, backups
 

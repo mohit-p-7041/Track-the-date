@@ -34,7 +34,7 @@ already does the hashing.
 
 Two accounts came across in the import — `BP TECOMA` and `sar ob` — and **both PINs are the
 placeholder `1234`** (`import_beep.py` line 42). That's fine for building against, but the real
-names and PINs have to be set before the first staff session in week 3. Staff management is
+names and PINs have to be set before the first staff session on day 5. Staff management is
 item 8; if login lands well before that, a one-off `scripts/add_user.py` is enough.
 
 ## 2. Scan & add `[x]`
@@ -73,7 +73,7 @@ A year outside today −1 to today +10 is refused with "Check the year on that d
 year is silent otherwise, and it poisons the due list for years.
 
 **Camera scanning in the aisles is not built.** It needs HTTPS to work on an iPad at all, so it
-belongs with the week-3 certificate work rather than here. The gun at the counter is the path
+belongs with the day-2 certificate work rather than here. The gun at the counter is the path
 that exists today.
 
 ## 3. Inline categories `[x]`
@@ -195,15 +195,29 @@ list already honours it, so it is a button and a "not the last one" guard when i
 
 ## After the screens
 
-**HTTPS + iPad certificates** (SPEC §1) — week 3. `start.bat` already switches automatically when
+Every item above is built. What is left is the five-day run-up to the shop using it — see
+SPEC §9, and `docs/ITERATION-1.md` for what to pick up next and in what order.
+
+**Real staff names and PINs** — day 2, and the one that cannot slip. Both imported accounts are
+still on the placeholder `1234`, so until this is done the audit trail says `BP TECOMA` for
+everybody, which is the whole point of having PINs.
+
+**HTTPS + iPad certificates** (SPEC §1) — day 2. `start.bat` already switches automatically when
 `certs/` exists; this is mkcert plus about two minutes per iPad, not a code change.
 
-**First real weekend scan session with staff** — week 3. The point of the whole schedule.
+**Camera scanning in the aisles** — day 2, straight after the certificates, because Safari will
+not open a camera over plain http from a network address. ZXing-js gets vendored into
+`app/static/vendor/`; no CDN.
 
-**Fixes from real use** — week 4. Keep it empty. The first staff session always surfaces
-something.
+**Deploy to the shop laptop, and training notes** — day 3.
 
-**Excel export** — week 4, deliberately deferred. The startup backup already protects the data.
+**Excel export** — day 3, deliberately deferred until now. The startup backup already protects
+the data, so this is for the manager's convenience rather than safety.
+
+**Dry run at the counter** — day 4. Gun plus one iPad, on the real laptop, before staff see it.
+
+**First real weekend scan session with staff** — day 5, Sat 15 Aug. The point of the whole
+schedule. Keep the day otherwise empty; the first session always surfaces something.
 
 ---
 
