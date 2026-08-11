@@ -18,11 +18,14 @@ entirely.
 from __future__ import annotations
 
 import secrets
+import sqlite3
 from pathlib import Path
 
-from fastapi import Request
+from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+
+from app.db import get_conn
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY_FILE = ROOT / "data" / "session.key"
@@ -107,9 +110,34 @@ async def session_middleware(request: Request, call_next):
     return await call_next(request)
 
 
-def current_user(request: Request) -> dict:
-    """Dependency: the signed-in user. Guaranteed by the middleware."""
+def is_active(conn: sqlite3.Connection, user_id: int) -> bool:
+    """Is this account still on the sign-in list?"""
+    row = conn.execute("SELECT active FROM users WHERE id = ?", (user_id,)).fetchone()
+    return bool(row and row["active"])
+
+
+def current_user(
+    request: Request,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict:
+    """Dependency: the signed-in user. Guaranteed by the middleware.
+
+    Every route that writes takes this, so this is where an account taken off
+    the sign-in list stops being able to add anything. The middleware cannot
+    do it — it runs before routing and has no connection, deliberately (see
+    the note at the top of this file), so it trusts the cookie alone. That
+    cookie lasts thirty days, which is long enough for an iPad still holding
+    a retired account's session to keep stamping batches with it. Checking
+    here closes that: taking someone off the list takes effect on the next
+    thing they try to save, not thirty days later.
+
+    Reading is left alone. Browsing as a retired account writes nothing and
+    misattributes nothing, and bouncing someone out of a page they are only
+    looking at would be noise.
+    """
     user = getattr(request.state, "user", None)
     if user is None:  # pragma: no cover — the middleware redirects first
         raise RuntimeError("current_user used on a public route")
+    if not is_active(conn, user["id"]):
+        raise HTTPException(status_code=303, headers={"Location": "/login"})
     return user

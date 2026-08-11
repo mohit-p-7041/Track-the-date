@@ -387,6 +387,28 @@ main { padding-bottom: 3rem; }
 
 .field-pin { width: 7rem; flex: 0 0 auto; }
 
+/* One person per block: rename, PIN and take-off-the-list are three separate
+   forms, so they cannot be one <form> row. They wrap on an iPad rather than
+   scrolling sideways. */
+.staff-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid #ececf0;
+}
+
+.staff-row:first-child { border-top: 0; padding-top: 0; }
+.staff-row .row-form { margin-bottom: 0; }
+
+/* The name line takes the row to itself; PIN and take-off-the-list share the
+   next one. Two lines per person rather than three, and the entry count stays
+   beside the name it belongs to. */
+.staff-row .staff-wide { flex: 1 1 100%; }
+
+.staff-gone { color: #6a6a70; }
+
 /* --------------------------------------------------- the discount sheet */
 
 .sheet {

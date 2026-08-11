@@ -183,13 +183,22 @@ SPEC §3.7. Open to everyone — there are no roles.
 - [x] Run a backup on demand and show when the last one ran
 - [x] Edit `expiry_window_days`
 - [x] No admin tier, no manager PIN, no gated features
+- [x] Rename a staff member, with case-insensitive names so two Sarahs can't both exist
+- [x] Take somebody off the sign-in list, and put them back
+- [x] The list can never be emptied — the last active account refuses
+- [x] An account taken off the list stops being able to write, including from a session
+      already signed in as it
 
 Notes: **the two imported accounts still have the placeholder PIN `1234`.** Set the real names and
 PINs on this screen before the first staff session — that is now a job for the shop, not a script.
 `scripts/add_user.py "Name" 1234` still exists for a fresh database where nobody can sign in yet.
+The procedure is `docs/STAFF-SETUP.md`.
 
-Deactivating someone who leaves is not built. The `users.active` column is there and the login
-list already honours it, so it is a button and a "not the last one" guard when it is wanted.
+Renaming and taking somebody off the list are both here now. They are not the same operation and
+the screen says so: renaming carries every entry that account ever made, which is right for a
+person under a tidier name and wrong for `BP TECOMA`, whose 2,290 entries are the old app's
+shared shop login. Each row shows its entry count so that number is visible before anyone
+renames anything.
 
 ---
 
@@ -201,6 +210,10 @@ SPEC §9, and `docs/ITERATION-1.md` for what to pick up next and in what order.
 **Real staff names and PINs** — day 2, and the one that cannot slip. Both imported accounts are
 still on the placeholder `1234`, so until this is done the audit trail says `BP TECOMA` for
 everybody, which is the whole point of having PINs.
+
+*The screen half is built* — rename, take off the list, put back, and a retired account can no
+longer write. What is left is the shop-floor half, which needs the actual staff list and cannot
+be done from here: **follow `docs/STAFF-SETUP.md` at the laptop.** Roughly twenty minutes.
 
 **HTTPS + iPad certificates** (SPEC §1) — day 2. `start.bat` already switches automatically when
 `certs/` exists; this is mkcert plus about two minutes per iPad, not a code change.

@@ -809,6 +809,145 @@ def test_resetting_a_pin_changes_which_one_works(client, anon_client, staff):
     ).status_code == 303
 
 
+# ------------------------------------------------- renaming and retiring staff
+# Iteration 2 item 1. The two imported accounts are `BP TECOMA` and `sar ob`,
+# both still on the placeholder PIN, and until they are dealt with the audit
+# trail says BP TECOMA for everybody.
+
+def test_somebody_can_be_renamed(client, anon_client, db, staff):
+    """`sar ob` becoming a real name is the whole point of this."""
+    client.post(f"/settings/staff/{staff['id']}/name", data={"name": "Sarah O’Brien"})
+    assert db.execute(
+        "SELECT name FROM users WHERE id = ?", (staff["id"],)
+    ).fetchone()[0] == "Sarah O’Brien"
+
+    client.get("/logout")
+    assert "Sarah O’Brien" in anon_client.get("/login").text
+    assert STAFF_NAME not in anon_client.get("/login").text
+
+
+def test_a_rename_carries_every_entry_that_person_ever_made(client, sample):
+    """added_by points at the row, so the history follows the name.
+
+    This is the behaviour that makes renaming the shared `BP TECOMA` login
+    into a person wrong, and it is why the screen shows the entry count.
+    """
+    client.post(f"/settings/staff/{sample['user_id']}/name", data={"name": "Mohit Pandya"})
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert "Added by Mohit Pandya" in body
+
+
+def test_a_rename_does_not_move_any_history(client, sample, db):
+    """Renaming must not touch the batches themselves — same rows, same ids."""
+    before = db.execute(
+        "SELECT COUNT(*) FROM batches WHERE added_by = ?", (sample["user_id"],)
+    ).fetchone()[0]
+    client.post(f"/settings/staff/{sample['user_id']}/name", data={"name": "Mohit Pandya"})
+    assert db.execute(
+        "SELECT COUNT(*) FROM batches WHERE added_by = ?", (sample["user_id"],)
+    ).fetchone()[0] == before
+    assert db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 2
+
+
+def test_the_header_shows_the_new_name_without_signing_in_again(client, staff):
+    """The cookie still holds the old name; the page must not."""
+    client.post(f"/settings/staff/{staff['id']}/name", data={"name": "Sarah O’Brien"})
+    body = client.get("/").text
+    assert "Sarah O’Brien" in body
+    assert STAFF_NAME not in body
+
+
+def test_renaming_somebody_to_a_case_variant_of_somebody_else_is_refused(client, db, staff):
+    """Two Sarahs on the keypad screen and nobody knows which one is theirs."""
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+    body = client.post(
+        f"/settings/staff/{staff['id']}/name", data={"name": "SARAH"}, follow_redirects=True
+    ).text
+    assert "already has that name" in body
+    assert "IntegrityError" not in body
+    assert db.execute(
+        "SELECT name FROM users WHERE id = ?", (staff["id"],)
+    ).fetchone()[0] == STAFF_NAME
+
+
+def test_adding_a_case_variant_of_an_existing_person_is_refused(client, db, staff):
+    body = client.post(
+        "/settings/staff", data={"name": STAFF_NAME.lower(), "pin": "4821"},
+        follow_redirects=True,
+    ).text
+    assert "already has that name" in body
+    assert db.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1
+
+
+def test_somebody_can_be_recased_without_colliding_with_themselves(client, db, staff):
+    """`sar ob` -> `Sar Ob` is a rename, not a duplicate."""
+    client.post(f"/settings/staff/{staff['id']}/name", data={"name": STAFF_NAME.upper()})
+    assert db.execute(
+        "SELECT name FROM users WHERE id = ?", (staff["id"],)
+    ).fetchone()[0] == STAFF_NAME.upper()
+
+
+def test_a_blank_staff_name_is_refused(client, db, staff):
+    body = client.post(
+        f"/settings/staff/{staff['id']}/name", data={"name": "   "}, follow_redirects=True
+    ).text
+    assert "Give the person a name" in body
+    assert db.execute(
+        "SELECT name FROM users WHERE id = ?", (staff["id"],)
+    ).fetchone()[0] == STAFF_NAME
+
+
+def test_somebody_taken_off_the_list_cannot_sign_in(client, anon_client, staff):
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+    client.post(f"/settings/staff/{staff['id']}/active", data={"active": "0"})
+    client.get("/logout")
+
+    assert STAFF_NAME not in anon_client.get("/login").text
+    assert anon_client.post(
+        "/login", data={"user_id": staff["id"], "pin": STAFF_PIN}, follow_redirects=False
+    ).status_code == 200                                  # re-rendered, not signed in
+
+
+def test_taking_somebody_off_the_list_deletes_nothing(client, sample, db):
+    """Their entries have to stay readable — that is the whole reason for it."""
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+    client.post(f"/settings/staff/{sample['user_id']}/active", data={"active": "0"})
+
+    assert db.execute(
+        "SELECT COUNT(*) FROM batches WHERE added_by = ?", (sample["user_id"],)
+    ).fetchone()[0] == 5
+    assert "Added by Mohit" in client.get(
+        f"/products/{sample['products']['monster']}"
+    ).text
+
+
+def test_somebody_taken_off_the_list_can_be_put_back(client, anon_client, db):
+    """A misclick has to be undoable, so there is no confirm step on the way in."""
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+    sarah = db.execute("SELECT id FROM users WHERE name = 'Sarah'").fetchone()[0]
+
+    client.post(f"/settings/staff/{sarah}/active", data={"active": "0"})
+    assert "Off the sign-in list" in client.get("/settings").text
+    assert db.execute("SELECT active FROM users WHERE id = ?", (sarah,)).fetchone()[0] == 0
+
+    client.post(f"/settings/staff/{sarah}/active", data={"active": "1"})
+    assert "Off the sign-in list" not in client.get("/settings").text
+
+    client.get("/logout")                      # the sign-in list needs a signed-out client
+    assert "Sarah" in anon_client.get("/login").text
+
+
+def test_the_staff_list_shows_how_many_entries_each_person_has(client, sample, staff):
+    """So nobody renames a 2,290-entry shared login without seeing the 2,290."""
+    body = client.get("/settings").text
+    assert "5 entries" in body                            # sample's user
+    assert "0 entries" in body                            # the signed-in one
+
+
+def test_the_off_the_list_card_is_absent_when_everyone_is_on_it(client, staff):
+    assert "Off the sign-in list" not in client.get("/settings").text
+
+
 def test_backup_runs_on_demand_and_is_reported(client, db_path):
     body = client.get("/settings").text
     assert "No backup has been taken yet" in body

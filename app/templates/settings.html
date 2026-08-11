@@ -41,27 +41,72 @@
 
   <h2 class="head">Staff</h2>
   <div class="card">
-    {% for s in staff %}
-      <form class="row-form" method="post" action="/settings/staff/{{ s.id }}/pin">
-        <span class="row-name">{{ s.name }}</span>
-        <input class="field field-pin" name="pin" inputmode="numeric" maxlength="4"
-               placeholder="New PIN" autocomplete="off">
-        <button class="btn btn-quiet" type="submit">Reset PIN</button>
-      </form>
+    {% for s in staff if s.active %}
+      <div class="staff-row">
+        {# Same shape as a category row above: name, the button that changes it,
+           and the count of what hangs off it. The count belongs on this line —
+           it is the number renaming would carry with it. #}
+        <form class="row-form staff-wide" method="post"
+              action="/settings/staff/{{ s.id }}/name">
+          <input class="field" name="name" value="{{ s.name }}" autocomplete="off">
+          <button class="btn btn-quiet" type="submit">Rename</button>
+          <span class="note">{{ s.entries }} entr{{ 'y' if s.entries == 1 else 'ies' }}</span>
+        </form>
+
+        <form class="row-form" method="post" action="/settings/staff/{{ s.id }}/pin">
+          <input class="field field-pin" name="pin" inputmode="numeric" maxlength="4"
+                 placeholder="New PIN" autocomplete="off">
+          <button class="btn btn-quiet" type="submit">Reset PIN</button>
+        </form>
+
+        <form method="post" action="/settings/staff/{{ s.id }}/active">
+          <input type="hidden" name="active" value="0">
+          <button class="btn btn-quiet" type="submit">Take off the list</button>
+        </form>
+      </div>
     {% endfor %}
 
-    <form class="row-form" method="post" action="/settings/staff">
-      <input class="field" name="name" placeholder="Name" autocomplete="off">
-      <input class="field field-pin" name="pin" inputmode="numeric" maxlength="4"
-             placeholder="PIN" autocomplete="off">
-      <button class="btn btn-quiet" type="submit">Add</button>
-    </form>
+    <div class="staff-row">
+      <form class="row-form staff-wide" method="post" action="/settings/staff">
+        <input class="field" name="name" placeholder="Name" autocomplete="off">
+        <input class="field field-pin" name="pin" inputmode="numeric" maxlength="4"
+               placeholder="PIN" autocomplete="off">
+        <button class="btn btn-quiet" type="submit">Add</button>
+      </form>
+    </div>
 
     <p class="note">
       Everyone can do everything, including this page. The PIN says who added
       or resolved something; it is not a lock.
     </p>
+    <p class="note">
+      Renaming somebody renames every entry they have ever made &mdash; right
+      for a typo, wrong for turning a shared login into a person. To retire an
+      account instead, take it off the list: its entries keep the name they
+      already have.
+    </p>
   </div>
+
+  {% if staff | rejectattr('active') | list %}
+    <h2 class="head">Off the sign-in list</h2>
+    <div class="card">
+      {% for s in staff if not s.active %}
+        <div class="staff-row">
+          <span class="row-name staff-gone">{{ s.name }}</span>
+          <span class="note">{{ s.entries }} entr{{ 'y' if s.entries == 1 else 'ies' }}</span>
+          <form method="post" action="/settings/staff/{{ s.id }}/active">
+            <input type="hidden" name="active" value="1">
+            <button class="btn btn-quiet" type="submit">Put back</button>
+          </form>
+        </div>
+      {% endfor %}
+
+      <p class="note">
+        These do not appear on the sign-in screen and cannot add anything.
+        Nothing was deleted &mdash; every batch they entered still says so.
+      </p>
+    </div>
+  {% endif %}
 
   <h2 class="head">Backup</h2>
   <div class="card">

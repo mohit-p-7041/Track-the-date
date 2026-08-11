@@ -13,7 +13,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
-from app.auth import sign_in, sign_out
+from app.auth import is_active, sign_in, sign_out
 from app.db import get_conn
 from app.security import verify_pin
 from app.views import render
@@ -38,7 +38,12 @@ def login_form(
     user: int | None = None,
     conn: sqlite3.Connection = Depends(get_conn),
 ):
-    if getattr(request.state, "user", None):
+    # Already signed in as somebody who can still sign in: nothing to do here.
+    # The `is_active` half matters — an account taken off the list still holds
+    # a valid cookie, and without it that person would be bounced back to the
+    # home screen every time they tried to sign in as themselves.
+    signed_in = getattr(request.state, "user", None)
+    if signed_in and is_active(conn, signed_in["id"]):
         return RedirectResponse("/", status_code=303)
 
     staff = _staff(conn)
