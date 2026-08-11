@@ -16,6 +16,10 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
+
+# Mount artefacts — SQLite files unlinked while still open
+.fuse_hidden*
 
 # OS
 .DS_Store

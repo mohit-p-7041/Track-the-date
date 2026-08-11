@@ -1,0 +1,10 @@
+# Development only. The shop laptop does not need these — it installs
+# requirements.txt and nothing else.
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest
+
+-r requirements.txt
+
+pytest==8.3.4
+httpx==0.28.1        # required by fastapi.testclient

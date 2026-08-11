@@ -50,12 +50,17 @@ These were considered and settled. Don't "improve" them into something else.
 start.bat       double-click launcher; picks HTTP or HTTPS automatically
 app/
   main.py         FastAPI app — currently just the home screen, grow it from here
+  db.py           get_conn dependency — the only way a route opens the database
   schema.sql      tables and indexes
   seed.sql        settings only; no categories are seeded by design
   security.py     PIN hashing
   routes/         one module per area as they appear (scan, products, sheet, settings)
   templates/      Jinja2 — base.html, home.html
   static/         css, js, vendor
+tests/
+  conftest.py     temp-database fixtures; never touches data/tecoma.db
+  test_screens.py routes render and show the right rows
+  test_rules.py   the locked decisions, as executable tests
 data/
   tecoma.db       the database — never commit
   photos/         compressed product images — never commit
@@ -68,6 +73,7 @@ scripts/
   backup.py       snapshot db + photos, keep last 7
   show_address.py print the URL for the iPads
 docs/
+  BACKLOG.md      what to build next, in order, with acceptance criteria
   DATA-NOTES.md   what's in the beep export, verified by running the import
   LAPTOP-NOTES.md the shop machine: specs, sleep settings, firewall, backups
   reference/      screenshots of the old app and the laptop, for reference
@@ -76,6 +82,8 @@ docs/
 ## Commands
 
 ```bash
+pip install -r requirements.txt -r requirements-dev.txt      # dev machine
+pytest                                                       # run before committing
 python scripts/init_db.py                                    # create the database
 python scripts/init_db.py --reset                            # destructive rebuild
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
@@ -86,10 +94,11 @@ python scripts/backup.py                                     # snapshot db + pho
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload      # dev server
 ```
 
-**Run `scripts/check_db.py` after any change that touches the schema, the importer, or how
-batches are written.** It turns the locked decisions above into executable checks and exits
-non-zero on failure. If a check fails, fix the cause — don't weaken the check. If a design
-decision genuinely changed, say so explicitly and update the check deliberately.
+**Run `pytest` and `scripts/check_db.py` before any commit.** Together they cover both halves:
+pytest proves the app renders and that the locked decisions can't be violated, `check_db.py`
+proves the shop's real data is sound. Both exit non-zero on failure. If something fails, fix the
+cause — don't weaken the check or delete the test. If a design decision genuinely changed, say so
+explicitly and update it deliberately.
 
 ## Conventions
 
@@ -107,6 +116,10 @@ decision genuinely changed, say so explicitly and update the check deliberately.
 - **Always open the database via `scripts.init_db.connect()`**, never `sqlite3.connect()`
   directly. `foreign_keys` and `synchronous` are per-connection pragmas — a raw connect silently
   drops both, which loses referential integrity and crash durability.
+- **Routes take the connection with `Depends(get_conn)`** from `app/db.py`; they never call
+  `connect()` themselves. It closes the handle even when a route raises, and it's the seam the
+  tests use to point the app at a temp database. A route that opens its own connection will read
+  the shop's real data during a test run, which makes the suite both wrong and dangerous.
 - **Submit each entry immediately.** Don't build multi-step wizards holding state in the browser.
   The laptop can sleep at any moment, and anything not yet posted is gone.
 - Images: resize client-side before upload, then Pillow to max 800px long edge, JPEG q72, EXIF
@@ -129,13 +142,33 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 ## Testing
 
-`scripts/check_db.py` is the current safety net — 12 structural checks, or 16 with
-`--expect-import`, which also asserts the original migration numbers. It is not a substitute for
-a test framework but it catches the things that matter most.
+Two layers. Run both.
 
-There is no pytest suite yet. When adding one, build it against a temporary SQLite file created
-from `schema.sql`, and verify against the real export rather than toy data — the edge cases that
-matter are in there.
+**`pytest`** — 39 tests against a temporary database built from `schema.sql` in a temp directory.
+It never touches `data/tecoma.db`, so it's safe to run on the shop laptop.
+
+- `tests/test_screens.py` — routes return 200, render, and show the right rows. This is the layer
+  `check_db.py` cannot provide: it catches template errors, wrong queries, off-by-one windows.
+- `tests/test_rules.py` — the locked decisions as tests. Not "nobody has broken this yet" but
+  "this cannot be done": the duplicate guard raises, categories collide case-insensitively,
+  `au_date` never emits US format or a leading zero.
+
+**`python scripts/check_db.py`** — 12 structural checks against the real database, or 16 with
+`--expect-import`, which also asserts the original migration numbers.
+
+### Adding tests
+
+Every new screen gets tests in `tests/test_screens.py`, one per acceptance criterion in
+`docs/BACKLOG.md`. Every new rule gets a test in `tests/test_rules.py` that proves the rule is
+enforced rather than merely respected.
+
+Use offsets from today (`days(-4)`, `days(7)`) rather than fixed dates, or the suite starts
+failing in November. Use the awkward names from the real export — mixed case, trailing
+whitespace, the curly apostrophe — not tidy fixtures. The edge cases that matter are in the data.
+
+**Write the test so that it would fail.** After adding one, break the thing it covers and confirm
+it goes red. A test that passes against a broken implementation is worse than no test, because it
+is what an unattended loop will trust.
 
 Before saying a screen works, actually load it and look at the response. `curl -s localhost:8000`
-is enough to catch a template error.
+catches a template error; only your eyes catch a bad layout.

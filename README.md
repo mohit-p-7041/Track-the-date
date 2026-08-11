@@ -16,8 +16,10 @@ Not a blank slate. Done and verified:
 - `scripts/check_db.py` — 16 checks that enforce the design decisions
 - `scripts/backup.py` — snapshot, prune to 7, restore-tested
 - `app/main.py` — a working home screen showing what's due
+- `tests/` — 39 tests: the screens render, and the locked decisions can't be broken
 
 Still to build: PIN login, scan & add, photos, search, the weekly print sheet, settings.
+`docs/BACKLOG.md` has them in order, with acceptance criteria.
 
 > **Where to build:** recommend developing on the Mac and deploying to the shop laptop via git.
 > The laptop runs the app easily, but Claude Code plus a browser plus the app on 8 GB is a slow
@@ -88,6 +90,10 @@ python scripts\import_beep.py data\imports\beep_2026-08-10.xlsx
 python scripts\check_db.py --expect-import
 ```
 
+On a machine you're developing on, also `pip install -r requirements-dev.txt` and run `pytest`.
+The shop laptop doesn't need it — the tests build their own temporary database and never read
+`data\tecoma.db`, so running them there is safe, just not necessary.
+
 The last command should print **All 16 checks passed**. If it doesn't, stop and read what failed.
 
 ### 6. Run it
@@ -114,19 +120,29 @@ claude
 
 ### Two commands are set up for you
 
-- `/feature <name>` — builds one feature properly: reads the spec, shows you a plan first, runs
-  the checks after
-- `/verify` — runs `check_db.py` and reports what passed
+- `/feature <name>` — builds one backlog item properly: reads the spec, shows you a plan first,
+  writes tests, runs the checks after
+- `/verify` — runs `pytest` and `check_db.py` and reports what passed
 
 ### The workflow that works
 
-Ask for one screen at a time and test it before moving on:
+One item from `docs/BACKLOG.md` at a time, in the order listed:
 
-> /feature scan and add screen from SPEC.md section 3, including the duplicate check
+```
+git status          # clean, so this feature can be rolled back on its own
+/feature PIN login  # it plans, you confirm, it builds
+/verify             # pytest + check_db
+                    # then load the page and look at it yourself
+git commit          # only on green
+/clear              # fresh context for the next one
+```
 
-Then once it's working, commit, `/clear`, and do the next one. Asking for the whole app at once
-produces a lot of code you haven't tested, and debugging that is slower than building it in
-pieces.
+Commit before starting, so a bad iteration is `git reset --hard` rather than an argument. Asking
+for the whole app at once produces a lot of code you haven't tested, and debugging that is slower
+than building it in pieces.
+
+The tests are what make this safe to repeat. `check_db.py` can tell you the data is sound but not
+that a screen renders — without `pytest`, an agent will report success on a page that throws.
 
 ### Useful things to know
 
@@ -184,3 +200,7 @@ readers fine but not two writers. Close the other instance.
 
 **`check_db.py` fails after a change** — read which check failed and fix the cause. Each one maps
 to a decision in `SPEC.md`. Don't weaken the check to make it pass.
+
+**A test fails after a change** — same rule. `tests/test_rules.py` is the locked decisions in
+executable form; a failure there means the change contradicted one. Deleting the test makes the
+problem invisible, not absent.
