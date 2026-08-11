@@ -204,3 +204,4 @@ to a decision in `SPEC.md`. Don't weaken the check to make it pass.
 **A test fails after a change** — same rule. `tests/test_rules.py` is the locked decisions in
 executable form; a failure there means the change contradicted one. Deleting the test makes the
 problem invisible, not absent.
+# Track-the-date
