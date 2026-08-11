@@ -37,6 +37,10 @@ MESSAGES = {
     "staff-blank": "Give the person a name.",
     "staff-exists": "Somebody already has that name.",
     "staff-bad-pin": "A PIN is exactly 4 digits.",
+    "staff-renamed": "Name changed.",
+    "staff-off": "Taken off the sign-in list. Their past entries keep their name.",
+    "staff-back": "Back on the sign-in list.",
+    "staff-last": "That is the only person left who can sign in.",
     "pin-reset": "PIN reset.",
     "backed-up": "Backed up.",
     "backup-failed": "The backup did not finish. Check the laptop's disk space.",
@@ -78,8 +82,16 @@ def settings_page(
                  FROM categories c
              ORDER BY c.sort_order, c.name COLLATE NOCASE"""
         ).fetchall(),
+        # Everyone, not just the active ones, so someone taken off the list by
+        # accident can be put back. The entry count is here because renaming
+        # an account renames every entry it ever made: the two imported
+        # accounts hold 2,290 and 50 batches between them, and whoever is
+        # about to rename one should see that number before they do.
         staff=conn.execute(
-            "SELECT id, name FROM users WHERE active = 1 ORDER BY name COLLATE NOCASE"
+            """SELECT u.id, u.name, u.active,
+                      (SELECT COUNT(*) FROM batches b WHERE b.added_by = u.id) AS entries
+                 FROM users u
+             ORDER BY u.name COLLATE NOCASE"""
         ).fetchall(),
         last_backup=last.name if last else None,
         backup_count=len(list(_backup_dir(conn).glob("tecoma-*.db")))
@@ -147,6 +159,21 @@ def rename_category(
     return _back("category-renamed")
 
 
+def _name_taken(conn: sqlite3.Connection, name: str, exclude_id: int = 0) -> bool:
+    """Is somebody else already called this, ignoring case?
+
+    `users.name` is UNIQUE, but that is case-sensitive — the database would
+    happily hold Sarah and sarah, and the sign-in list would then show two
+    Sarahs with no way to tell which is yours. Categories have a NOCASE unique
+    index for the same reason; ten people typing names freely is the same
+    problem in both places.
+    """
+    return conn.execute(
+        "SELECT 1 FROM users WHERE name = ? COLLATE NOCASE AND id != ?",
+        (name, exclude_id),
+    ).fetchone() is not None
+
+
 @router.post("/settings/staff")
 def add_staff(
     name: str = Form(""),
@@ -161,6 +188,8 @@ def add_staff(
         pin_hash, pin_salt = hash_pin(pin.strip())
     except ValueError:
         return _back("staff-bad-pin")
+    if _name_taken(conn, name):
+        return _back("staff-exists")
     try:
         conn.execute("INSERT INTO users (name, pin_hash, pin_salt) VALUES (?, ?, ?)",
                      (name, pin_hash, pin_salt))
@@ -168,6 +197,67 @@ def add_staff(
         return _back("staff-exists")
     conn.commit()
     return _back("staff-added")
+
+
+@router.post("/settings/staff/{user_id}/name")
+def rename_staff(
+    user_id: int,
+    name: str = Form(""),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Fix a name — a typo, a shorthand, or a married name.
+
+    This does not move any history. `batches.added_by` points at the row, so
+    every entry this account ever made now reads under the new name. That is
+    right when it is the same person under a tidier name, and wrong when it is
+    the old app's shared `BP TECOMA` login being turned into a real person —
+    2,290 entries would start claiming somebody made them. Retiring that one
+    is what the button below is for. See docs/STAFF-SETUP.md.
+    """
+    name = " ".join(name.split())
+    if not name:
+        return _back("staff-blank")
+    if _name_taken(conn, name, exclude_id=user_id):
+        return _back("staff-exists")
+    try:
+        conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+    except sqlite3.IntegrityError:
+        return _back("staff-exists")
+    conn.commit()
+    return _back("staff-renamed")
+
+
+@router.post("/settings/staff/{user_id}/active")
+def set_staff_active(
+    user_id: int,
+    active: int = Form(...),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Take somebody off the sign-in list, or put them back.
+
+    Nothing is deleted: the row stays, so every batch they added keeps saying
+    who added it. This is how somebody who has left the shop stops appearing
+    on the keypad screen, and how the two imported accounts get retired
+    without rewriting the history they carry.
+
+    Taking yourself off is allowed. It has to be — on the day the real staff
+    are set up, whoever is doing it is signed in as `BP TECOMA`, and that is
+    the account being retired. There are no roles here; the only thing guarded
+    is emptying the list completely, which would lock the shop out of its own
+    laptop.
+    """
+    wanted = 1 if active else 0
+    if not wanted:
+        others = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE active = 1 AND id != ?", (user_id,)
+        ).fetchone()[0]
+        if not others:
+            return _back("staff-last")
+    conn.execute("UPDATE users SET active = ? WHERE id = ?", (wanted, user_id))
+    conn.commit()
+    return _back("staff-back" if wanted else "staff-off")
 
 
 @router.post("/settings/staff/{user_id}/pin")

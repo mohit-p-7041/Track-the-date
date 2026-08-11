@@ -134,6 +134,59 @@ def test_same_pin_gets_different_hashes(db):
     assert hash_pin("1234")[0] != hash_pin("1234")[0]
 
 
+def test_an_account_off_the_list_cannot_add_anything(client, sample, db, staff):
+    """Retiring an account has to bite the sessions already holding it.
+
+    The cookie lasts thirty days and the middleware never looks at the
+    database, so without the check in current_user an iPad still signed in as
+    `BP TECOMA` would go on stamping batches with it for a month after it was
+    taken off the list. That is exactly the thing this iteration exists to
+    stop.
+    """
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+
+    def add(expiry: str) -> int:
+        """Add a date to a known barcode; how many batches now carry that date."""
+        client.post(
+            "/scan/add",
+            data={"barcode": "9300601234567", "expiry_date": expiry},
+            follow_redirects=False,
+        )
+        return db.execute(
+            "SELECT COUNT(*) FROM batches WHERE expiry_date = ?", (expiry,)
+        ).fetchone()[0]
+
+    assert add(days(45)) == 1, "the control failed — this test proves nothing"
+
+    client.post(f"/settings/staff/{staff['id']}/active", data={"active": "0"})
+    assert add(days(46)) == 0
+
+
+def test_somebody_off_the_list_can_still_reach_the_sign_in_screen(client, staff):
+    """Otherwise retiring your own account locks you out of your own laptop.
+
+    /login sends a signed-in person to the home screen. Somebody just taken
+    off the list is still signed in as far as the cookie goes, so without the
+    active check there they would bounce straight back and never get to sign
+    in as themselves.
+    """
+    client.post("/settings/staff", data={"name": "Sarah", "pin": "4821"})
+    client.post(f"/settings/staff/{staff['id']}/active", data={"active": "0"})
+
+    response = client.get("/login", follow_redirects=False)
+    assert response.status_code == 200
+    assert "Sarah" in response.text
+
+
+def test_the_shop_cannot_empty_its_own_sign_in_list(client, db, staff):
+    """No roles means anyone can retire anyone. Retiring the last one is a lockout."""
+    body = client.post(
+        f"/settings/staff/{staff['id']}/active", data={"active": "0"}, follow_redirects=True
+    ).text
+    assert "only person left" in body
+    assert db.execute("SELECT COUNT(*) FROM users WHERE active = 1").fetchone()[0] == 1
+
+
 # ----------------------------------------------------------------------- dates
 
 def test_au_date_is_australian():

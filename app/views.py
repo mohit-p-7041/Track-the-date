@@ -91,6 +91,23 @@ def window_days(conn: sqlite3.Connection) -> int:
         return 7
 
 
+def signed_in_name(request: Request, conn: sqlite3.Connection) -> dict | None:
+    """The signed-in user, with the name the database holds right now.
+
+    The cookie carries the name it was signed in with, which goes stale the
+    moment somebody is renamed in Settings — the header would keep saying
+    `BP TECOMA` until that person happened to sign in again. Writes were never
+    affected (they stamp the id), but a screen showing a name that is no
+    longer anyone's is the sort of thing that makes people distrust the rest
+    of the page.
+    """
+    user = getattr(request.state, "user", None)
+    if not user:
+        return None
+    row = conn.execute("SELECT name FROM users WHERE id = ?", (user["id"],)).fetchone()
+    return {**user, "name": row["name"]} if row else user
+
+
 def render(
     request: Request,
     conn: sqlite3.Connection,
@@ -106,7 +123,7 @@ def render(
     """
     base = {
         "shop_name": setting(conn, "shop_name", "BP Tecoma"),
-        "user": getattr(request.state, "user", None),
+        "user": signed_in_name(request, conn),
         "today": dt.date.today(),
     }
     base.update(context)
