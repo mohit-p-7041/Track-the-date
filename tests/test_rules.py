@@ -11,7 +11,10 @@ that says so.
 
 from __future__ import annotations
 
+import hashlib
+import re
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +22,8 @@ from app.main import au_date
 from app.views import au_when
 from app.security import hash_pin, verify_pin
 from conftest import days
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # ------------------------------------------------------- the duplication guard
@@ -185,6 +190,64 @@ def test_the_shop_cannot_empty_its_own_sign_in_list(client, db, staff):
     ).text
     assert "only person left" in body
     assert db.execute("SELECT COUNT(*) FROM users WHERE active = 1").fetchone()[0] == 1
+
+
+# --------------------------------------------------------------- no CDN links
+
+# The shop laptop has to work with the internet down. A CDN link is invisible
+# until the day the connection drops, which is exactly the day someone is
+# standing at the counter with a queue.
+
+# Matches a URL only where the browser would actually go and fetch it, so
+# prose in a comment ("a plain http:// address is not a secure context") does
+# not trip it. That distinction matters: the rule is about requests, not text.
+EXTERNAL = re.compile(
+    r"""(?:src|href)\s*=\s*["']\s*(?:https?:)?//"""
+    r"""|url\(\s*["']?\s*(?:https?:)?//"""
+    r"""|@import\s+["']?\s*(?:https?:)?//"""
+    r"""|(?:fetch|importScripts)\(\s*["']\s*(?:https?:)?//""",
+    re.IGNORECASE,
+)
+
+SERVED = [
+    *(ROOT / "app" / "templates").glob("*.html"),
+    *(ROOT / "app" / "static" / "js").glob("*.js"),
+    *(ROOT / "app" / "static" / "css").glob("*.css"),
+]
+
+
+def test_nothing_served_to_a_browser_links_out():
+    """Every asset comes from this laptop. Vendored files go in static/vendor."""
+    assert SERVED, "found no templates or assets to check — the globs are wrong"
+    offenders = []
+    for path in SERVED:
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if EXTERNAL.search(line):
+                offenders.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()}")
+    assert not offenders, "external requests found:\n" + "\n".join(offenders)
+
+
+def test_the_vendored_scanner_is_the_file_we_vetted():
+    """Pinned by checksum, so a swapped or edited bundle is not silent.
+
+    app/static/vendor/README.md records where this came from and what it
+    hashes to. Nothing in that folder is edited by hand — if this fails, the
+    file changed and the question is who changed it and to what.
+    """
+    vendor = ROOT / "app" / "static" / "vendor"
+    library = vendor / "zxing-0.21.3.min.js"
+    assert library.exists(), "the vendored scanner library is missing"
+
+    recorded = re.search(
+        r"SHA-256.*?`([0-9a-f]{64})`", (vendor / "README.md").read_text(encoding="utf-8")
+    )
+    assert recorded, "README.md no longer records a SHA-256 for the library"
+
+    actual = hashlib.sha256(library.read_bytes()).hexdigest()
+    assert actual == recorded.group(1), (
+        f"the vendored library does not match README.md\n"
+        f"  recorded {recorded.group(1)}\n  actual   {actual}"
+    )
 
 
 # ----------------------------------------------------------------------- dates

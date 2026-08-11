@@ -409,6 +409,22 @@ main { padding-bottom: 3rem; }
 
 .staff-gone { color: #6a6a70; }
 
+/* ------------------------------------------------- camera barcode scanning */
+
+.scan-panel { margin-top: 0.75rem; }
+
+/* A fixed aspect box, so the card does not jump when the stream arrives and
+   the browser learns the real video dimensions. */
+.scan-view {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #1a1a1a;
+  border-radius: 8px;
+  object-fit: cover;
+  margin-bottom: 0.6rem;
+}
+
 /* --------------------------------------------------- the discount sheet */
 
 .sheet {
