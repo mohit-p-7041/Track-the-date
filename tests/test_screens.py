@@ -809,6 +809,90 @@ def test_resetting_a_pin_changes_which_one_works(client, anon_client, staff):
     ).status_code == 303
 
 
+# ------------------------------------------------------ camera scanning
+# Iteration 2 item 3. The aisle half of scanning. The counter gun is the path
+# used hundreds of times a week and must come out of this untouched.
+
+def test_the_camera_button_ships_hidden(client):
+    """It is revealed by JS only where getUserMedia exists.
+
+    Anywhere a camera could not be opened — the shop's http address before the
+    certificates go on — it stays hidden rather than appearing and failing.
+    """
+    body = client.get("/scan").text
+    tag = body.split('id="scan-camera"')[1].split(">")[0]
+    assert "hidden" in tag
+
+
+def test_the_camera_fills_the_same_field_and_submits_the_same_form(client):
+    """One route, one lookup, one duplicate check — however the barcode arrived."""
+    body = client.get("/scan").text
+    assert 'id="barcode-form"' in body
+    assert 'action="/scan"' in body
+    assert 'method="get"' in body
+    # The button is inside that form and is type=button, so it cannot itself
+    # submit a blank lookup before anything has been decoded.
+    tag = body.split('id="scan-camera"')[1].split(">")[0]
+    assert 'type="button"' in tag
+
+
+def test_a_decoded_barcode_takes_the_ordinary_path(client, sample, db, staff):
+    """Whatever the camera fills in is just a barcode in the query string."""
+    body = client.get("/scan?barcode=9300601234567").text
+    assert "Monster Ultra Zero 500ml" in body
+
+    # ...and the duplicate rule still applies to it, exactly as when typed.
+    client.post("/scan/add", data={"barcode": "9300601234567", "expiry_date": days(50)})
+    body = client.post(
+        "/scan/add", data={"barcode": "9300601234567", "expiry_date": days(50)},
+        follow_redirects=True,
+    ).text
+    assert "Already tracked" in body
+    assert db.execute(
+        "SELECT COUNT(*) FROM batches WHERE product_id = ? AND expiry_date = ?",
+        (sample["products"]["monster"], days(50)),
+    ).fetchone()[0] == 1
+
+
+def test_the_scanner_library_is_served_from_static_vendor(client):
+    response = client.get("/static/vendor/zxing-0.21.3.min.js")
+    assert response.status_code == 200
+    assert "javascript" in response.headers["content-type"]
+    assert "ZXing" in response.text[:400]
+
+
+def test_the_scanner_script_is_absent_from_the_date_step(client, sample):
+    """The counter path is scan, type date, Enter. It carries no scanner code."""
+    body = client.get("/scan?barcode=9300601234567").text
+    assert "scanner.js" not in body
+    assert 'id="scan-camera"' not in body
+
+
+def test_the_heavy_library_is_not_loaded_up_front(client):
+    """336 KB must not land on the gun path. scanner.js injects it on demand."""
+    body = client.get("/scan").text
+    assert "scanner.js" in body
+    assert "zxing" not in body.lower()
+
+
+def test_the_counter_flow_is_unchanged(client, sample, db, staff):
+    """Scan, type date, Enter — no mouse, and nothing new in the way."""
+    body = client.get("/scan").text
+    assert "autofocus" in body.split('id="barcode"')[1].split(">")[0]
+
+    body = client.get("/scan?barcode=9300601234567").text
+    assert "autofocus" in body.split('id="expiry"')[1].split(">")[0]
+
+    response = client.post(
+        "/scan/add", data={"barcode": "9300601234567", "expiry_date": days(55)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert db.execute(
+        "SELECT added_by FROM batches WHERE expiry_date = ?", (days(55),)
+    ).fetchone()[0] == staff["id"]
+
+
 # ------------------------------------------------- renaming and retiring staff
 # Iteration 2 item 1. The two imported accounts are `BP TECOMA` and `sar ob`,
 # both still on the placeholder PIN, and until they are dealt with the audit

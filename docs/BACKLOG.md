@@ -72,9 +72,23 @@ date cannot be parsed even by accident. On an en-AU machine it shows `dd/mm/yyyy
 A year outside today −1 to today +10 is refused with "Check the year on that date." A mistyped
 year is silent otherwise, and it poisons the due list for years.
 
-**Camera scanning in the aisles is not built.** It needs HTTPS to work on an iPad at all, so it
-belongs with the day-2 certificate work rather than here. The gun at the counter is the path
-that exists today.
+**Camera scanning in the aisles is built** — iteration 2 item 3. A "Scan with camera" button on
+the barcode step, revealed only where `getUserMedia` exists, which means the laptop today and the
+iPads once the certificates are on. A decode fills the same field the gun types into and submits
+the same form, so there is one route, one lookup and one duplicate check however the barcode
+arrived.
+
+- [x] The button is absent where a camera cannot be opened, and the gun path is unaffected
+- [x] A decoded barcode takes the ordinary path, duplicate rule included
+- [x] ZXing is vendored in `app/static/vendor/`, pinned by SHA-256, with no external request
+- [x] The counter flow is unchanged: scan, type date, Enter
+
+ZXing is **not** loaded up front. It is 336 KB and the gun path must not pay for a feature it
+never uses, so `scanner.js` injects it on the first tap of the button. Someone scanning at the
+counter downloads nothing extra.
+
+Decoding is restricted to EAN-13, EAN-8, UPC-A, UPC-E and CODE-128. Leaving QR and Data Matrix on
+makes every frame slower and invites a misread off the printing on a packet.
 
 ## 3. Inline categories `[x]`
 
@@ -223,9 +237,11 @@ be done from here: **follow `docs/STAFF-SETUP.md` at the laptop.** Roughly twent
 correctly not `Secure` so http keeps working. The procedure is `docs/HTTPS-SETUP.md`. The mkcert
 run and the iPad profile install need the shop hardware.
 
-**Camera scanning in the aisles** — day 2, straight after the certificates, because Safari will
-not open a camera over plain http from a network address. ZXing-js gets vendored into
-`app/static/vendor/`; no CDN.
+**Camera scanning in the aisles** — *built*. ZXing 0.21.3 vendored into `app/static/vendor/`, no
+CDN, loaded on demand. Verified on the laptop: the vendored decoder reads a real EAN-13 from the
+shop's own data, and a decode fills the barcode field and submits the ordinary lookup. **Not yet
+verified on an iPad** — that needs the certificates, and it is the one thing left to confirm in
+person, along with holding a real barcode in front of a real camera.
 
 **Deploy to the shop laptop, and training notes** — day 3.
 

@@ -24,13 +24,30 @@
   {% if not barcode %}
 
     {# Step one. The gun types the barcode and its own Enter submits this. #}
-    <form class="card" method="get" action="/scan">
+    <form class="card" id="barcode-form" method="get" action="/scan">
       <label class="label" for="barcode">Barcode</label>
       <input class="field field-big" id="barcode" name="barcode" autocomplete="off"
              autocapitalize="off" spellcheck="false" autofocus required>
       <button class="btn btn-wide" type="submit">Look up</button>
+
+      {# Revealed by scanner.js only where a camera can actually be opened, so
+         it is absent on the counter laptop's http address rather than present
+         and broken. It fills the field above and submits this same form —
+         there is no second add path. #}
+      <button class="btn btn-wide btn-quiet" id="scan-camera" type="button" hidden>
+        Scan with camera
+      </button>
+
       <p class="note">Scan with the gun, or type it and press Enter.</p>
     </form>
+
+    {# playsinline matters: without it iOS takes the video fullscreen and the
+       page underneath, including the field being filled, disappears. #}
+    <div class="card scan-panel" id="scan-panel" hidden>
+      <video class="scan-view" id="scan-view" playsinline muted></video>
+      <p class="note" id="scan-note">Hold the barcode in the box.</p>
+      <button class="btn btn-wide btn-quiet" id="scan-cancel" type="button">Cancel</button>
+    </div>
 
   {% elif product %}
 
@@ -90,4 +107,10 @@
   {% endif %}
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+  {# Only on the barcode step. The date step has nothing to scan, and the
+     counter path should carry no script it does not use. #}
+  {% if not barcode %}<script src="/static/js/scanner.js"></script>{% endif %}
 {% endblock %}
