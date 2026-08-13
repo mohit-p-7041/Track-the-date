@@ -14,7 +14,7 @@ import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 
 from app.auth import current_user
 from app.db import get_conn
@@ -22,6 +22,7 @@ from app.photos import photo_dir
 from app.security import hash_pin
 from app.views import render, window_days
 from scripts import backup as backup_script
+from scripts import export_xlsx as export_script
 
 router = APIRouter()
 
@@ -96,6 +97,7 @@ def settings_page(
         last_backup=last.name if last else None,
         backup_count=len(list(_backup_dir(conn).glob("tecoma-*.db")))
         if _backup_dir(conn).exists() else 0,
+        batch_count=conn.execute("SELECT COUNT(*) FROM batches").fetchone()[0],
         message=MESSAGES.get(message, ""),
     )
 
@@ -276,6 +278,27 @@ def reset_pin(
                  (pin_hash, pin_salt, user_id))
     conn.commit()
     return _back("pin-reset")
+
+
+@router.get("/settings/export.xlsx")
+def export_spreadsheet(conn: sqlite3.Connection = Depends(get_conn)):
+    """Hand the spreadsheet straight to the browser as a download.
+
+    A GET, because this reads and changes nothing — it can be bookmarked, and
+    a reload just takes a fresher copy. It is still behind the PIN: the
+    middleware in app/auth.py covers everything except /login and /static.
+
+    No `current_user` here, unlike every other route in this file. That
+    dependency exists to stamp `added_by` on a write and to stop a retired
+    account making one; nothing is written, so there is nothing to stamp.
+    """
+    return Response(
+        content=export_script.build(conn),
+        media_type=export_script.MIME,
+        headers={
+            "Content-Disposition": f'attachment; filename="{export_script.filename()}"'
+        },
+    )
 
 
 @router.post("/settings/backup")

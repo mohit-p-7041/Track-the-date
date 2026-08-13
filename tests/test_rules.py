@@ -227,6 +227,38 @@ def test_nothing_served_to_a_browser_links_out():
     assert not offenders, "external requests found:\n" + "\n".join(offenders)
 
 
+CSS = ROOT / "app" / "static" / "css" / "app.css"
+
+
+def test_the_hidden_attribute_actually_hides():
+    """A hidden element must not be on screen. This was not true.
+
+    The browser's own rule is `[hidden] { display: none }` — one attribute
+    selector, which any author rule setting `display` outranks. `.btn` sets
+    `display: inline-block`, so the camera button shipped `hidden`, was left
+    hidden on every device without a camera, and was drawn anyway: visible,
+    and completely dead, because scanner.js returns before it binds a click.
+    Found on an iPad over plain http, where it is the normal state.
+
+    There is no browser in this suite, so this checks the mechanism rather
+    than the pixels: the stylesheet has to re-assert `[hidden]` hard enough
+    to win. Removing that rule brings the bug straight back.
+    """
+    # Comments stripped first: the rule is explained in a comment that quotes
+    # the browser's weaker version of itself, and a plain search finds that.
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.DOTALL)
+    rule = re.search(r"\[hidden\]\s*\{([^}]*)\}", css)
+    assert rule, "nothing in app.css re-asserts [hidden]"
+    body = rule.group(1)
+    assert "display" in body and "none" in body, f"[hidden] does not hide: {body!r}"
+    assert "!important" in body, "without !important a .btn display rule still wins"
+
+    # The hazard has to still be there for the guard to be worth keeping. If
+    # this ever fails, .btn stopped setting display and this test can go.
+    assert re.search(r"\.btn\s*\{[^}]*display\s*:", css), \
+        ".btn no longer sets display — re-check whether the guard is still needed"
+
+
 def test_the_vendored_scanner_is_the_file_we_vetted():
     """Pinned by checksum, so a swapped or edited bundle is not silent.
 
@@ -333,3 +365,130 @@ def test_the_window_is_a_setting_not_a_constant(db):
     assert db.execute(
         "SELECT value FROM settings WHERE key = 'expiry_window_days'"
     ).fetchone()[0] == "7"
+
+
+# --------------------------------------------------------------- the export
+#
+# A spreadsheet is the one place this data leaves the app, and Excel rewrites
+# anything it is allowed to interpret. These say it may not.
+
+def _export(conn, **kwargs):
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    from scripts.export_xlsx import build
+
+    return load_workbook(BytesIO(build(conn, **kwargs))).active
+
+
+def _row_for(sheet, product_name):
+    """The one row for this product. Strict on purpose.
+
+    A product can have several batches, and returning the first match would
+    let a change in sort order quietly point a test at a different row —
+    which is exactly what happened once. Target products with one batch.
+    """
+    rows = [row for row in sheet.iter_rows(min_row=2) if row[0].value == product_name]
+    assert len(rows) == 1, f"{product_name!r} has {len(rows)} rows, expected 1"
+    return rows[0]
+
+
+# One batch, so a row lookup is unambiguous. Trailing spaces and all.
+SINGLE = "C/RIDGE WATER 1L  "
+
+
+def test_a_barcode_keeps_its_leading_zeros(db, sample):
+    """0000001051117 is a real product. As a number it becomes 1051117."""
+    db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+               ("0000001051117", "Zero Lead Test Item"))
+    db.execute("INSERT INTO batches (product_id, expiry_date) "
+               "SELECT id, ? FROM products WHERE barcode = ?",
+               (days(20), "0000001051117"))
+    db.commit()
+
+    cell = _row_for(_export(db), "Zero Lead Test Item")[1]
+    assert cell.value == "0000001051117"
+    assert isinstance(cell.value, str), "written as a number, the zeros are gone"
+    assert cell.number_format == "@", "without a text format Excel re-reads it"
+
+
+def test_a_scanner_prefixed_barcode_survives(db, sample):
+    """]C1... and QR URLs are in the real data. Neither is a number."""
+    for barcode, name in ((']C10118721274620198', "Gun Prefix Item"),
+                          ("https://qrco.de/bdeRvm", "QR Code Item")):
+        db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)", (barcode, name))
+        db.execute("INSERT INTO batches (product_id, expiry_date) "
+                   "SELECT id, ? FROM products WHERE barcode = ?", (days(21), barcode))
+    db.commit()
+
+    sheet = _export(db)
+    assert _row_for(sheet, "Gun Prefix Item")[1].value == ']C10118721274620198'
+    assert _row_for(sheet, "QR Code Item")[1].value == "https://qrco.de/bdeRvm"
+
+
+def test_expiry_is_a_real_date_never_a_us_string(db, sample):
+    import datetime as dt
+
+    cell = _row_for(_export(db), SINGLE)[3]
+    assert isinstance(cell.value, (dt.date, dt.datetime)), "a string is Excel's to guess at"
+    assert "mmm" in cell.number_format, "a numeric month can be read either way round"
+    assert "mm/dd" not in cell.number_format
+
+
+def test_the_export_carries_no_quantity(db, sample):
+    """There is no counting. The column exists in the schema and stays there."""
+    headings = [c.value for c in _export(db)[1]]
+    assert not any("quantity" in str(h).lower() for h in headings)
+
+
+def test_timestamps_are_shifted_to_shop_time(db, sample):
+    """SQLite stores UTC. The shop is GMT+10 and reads these as local."""
+    db.execute("UPDATE batches SET added_at = ? WHERE product_id = ?",
+               ("2026-08-11 03:30:00", sample["products"]["shouty"]))
+    db.commit()
+
+    stamp = _row_for(_export(db), SINGLE)[8].value
+    assert (stamp.hour, stamp.minute) == (13, 30), "still UTC"
+    assert stamp.day == 11
+
+
+def test_a_date_only_stamp_is_not_shifted_into_a_time(db, sample):
+    """The 583 migrated rows carry a date, not a timestamp. +10h invents 10am."""
+    import datetime as dt
+
+    db.execute("UPDATE batches SET status = 'pulled', resolved_at = ? WHERE id = ?",
+               ("2026-03-02", sample["batches"]["due_soon"]))
+    db.commit()
+
+    cell = _row_for(_export(db), SINGLE)[10]
+    assert cell.value == dt.datetime(2026, 3, 2, 0, 0), "a time appeared from nowhere"
+    assert cell.number_format == "d mmm yyyy"
+
+
+def test_names_go_in_exactly_as_the_shop_has_them(db, sample):
+    """Messy case, trailing space, curly apostrophe. Do not clean them."""
+    products = {row[0].value for row in _export(db).iter_rows(min_row=2)}
+    assert "C/RIDGE WATER 1L  " in products
+    assert "Arnott’s Tim Tam 200g" in products
+
+
+def test_a_name_starting_with_equals_is_not_a_formula(db, sample):
+    db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+               ("9300600000999", "=SUM(A1:A9) Mints"))
+    db.execute("INSERT INTO batches (product_id, expiry_date) "
+               "SELECT id, ? FROM products WHERE barcode = ?",
+               (days(22), "9300600000999"))
+    db.commit()
+
+    cell = _row_for(_export(db), "=SUM(A1:A9) Mints")[0]
+    assert cell.data_type == "s", "Excel would show #NAME? where the product should be"
+
+
+def test_exporting_changes_nothing_in_the_database(db, sample):
+    """It is a copy for reading. Nothing here is a write."""
+    from scripts.export_xlsx import build
+
+    before = "\n".join(db.iterdump())
+    build(db)
+    assert "\n".join(db.iterdump()) == before

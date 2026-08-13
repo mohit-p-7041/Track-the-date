@@ -306,8 +306,8 @@ update, backups run at every startup, and the old paper habit still works if a s
 
 ### Deferred, deliberately
 
-- **Excel export.** Wanted, not needed to go live — the startup backup already protects the data.
-  Day 3.
+- **Excel export.** ~~Wanted, not needed to go live — the startup backup already protects the
+  data. Day 3.~~ Built on day 2: a button on the settings screen and `scripts/export_xlsx.py`.
 - **Quantity per batch.** Column exists at 1, hidden. Pending the manager's view.
 - **Bulk categorisation screen.** Not being built. Categories grow through normal scanning.
 
