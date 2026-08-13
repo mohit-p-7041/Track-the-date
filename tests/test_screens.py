@@ -220,6 +220,52 @@ def test_unknown_barcode_asks_for_a_name(client, sample):
     assert 'id="expiry"' in body
 
 
+def test_a_typed_word_is_refused_and_creates_nothing(client, db):
+    """The punch-list bug itself. Products are never deleted, so junk is forever."""
+    before = db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "cool ridge water", "name": "Cool Ridge Water 600ml",
+              "expiry_date": days(10)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200            # re-rendered with the reason
+    assert "digits only" in response.text
+    assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == before
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == 0
+
+
+def test_an_invalid_barcode_never_opens_the_new_product_form(client):
+    """Nobody should type a name for something that will be refused on save."""
+    body = client.get("/scan?barcode=cool ridge water").text
+    assert "digits only" in body
+    assert 'id="name"' not in body
+    assert 'id="barcode"' in body                 # back to step one, ready to rescan
+
+
+def test_a_barcode_of_the_wrong_length_says_the_length(client, db):
+    response = client.post(
+        "/scan/add", data={"barcode": "12345", "name": "Too Short", "expiry_date": days(10)}
+    )
+    assert "6 to 18 digits" in response.text
+    assert "That one is 5" in response.text
+    assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
+
+
+def test_a_gun_prefixed_new_barcode_is_stored_without_the_prefix(client, db, staff):
+    """The stored barcode is the code, not the gun's announcement of it."""
+    client.post(
+        "/scan/add",
+        data={"barcode": "]C10118721274620198", "name": "Golden Gay Time Lamington",
+              "expiry_date": days(12)},
+    )
+    row = db.execute(
+        "SELECT barcode FROM products WHERE name = 'Golden Gay Time Lamington'"
+    ).fetchone()
+    assert row is not None, "the add was refused"
+    assert row["barcode"] == "0118721274620198"
+
+
 def test_adding_writes_a_batch_stamped_with_the_signed_in_user(client, sample, db, staff):
     response = client.post(
         "/scan/add",

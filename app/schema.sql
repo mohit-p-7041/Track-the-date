@@ -39,10 +39,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_name_nocase
 -- ------------------------------------------------------------- products
 -- One row per barcode. Name, category and photo live here so they are
 -- stored once, not repeated for every expiry date.
+--
+-- THE BARCODE RULE, as a backstop.
+-- Digits only, 6 to 18 of them. app/catalogue.py checks this first and is
+-- where the wording staff read comes from; this constraint is what makes it
+-- impossible by another route, the way idx_batches_unique_live is for
+-- duplicates. Never drop it.
+--
+-- A product is never deleted by staff, so a barcode typed as a word would be
+-- permanent. `NOT GLOB '*[^0-9]*'` is how SQLite says "every character is a
+-- digit" — the length test alone would still admit 'cool ridge water'.
+-- The gun's leading AIM identifier (']' plus two characters) is stripped
+-- before it ever reaches here; it is transport noise, not a barcode.
 
 CREATE TABLE IF NOT EXISTS products (
     id          INTEGER PRIMARY KEY,
-    barcode     TEXT    NOT NULL UNIQUE,
+    barcode     TEXT    NOT NULL UNIQUE
+                        CHECK (length(barcode) BETWEEN 6 AND 18
+                               AND barcode NOT GLOB '*[^0-9]*'),
     name        TEXT    NOT NULL,
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     image_path  TEXT,

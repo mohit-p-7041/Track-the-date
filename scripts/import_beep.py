@@ -36,6 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from app.catalogue import parse_barcode  # noqa: E402
 from app.security import hash_pin  # noqa: E402
 from scripts.init_db import DB_PATH, connect  # noqa: E402
 
@@ -125,6 +126,7 @@ def main() -> int:
     pairs: dict[tuple, dict] = {}           # (barcode, date) -> batch info
     staff: set[str] = set()
     skipped: list[tuple[int, str]] = []
+    refused_barcodes: dict[str, int] = defaultdict(int)   # raw barcode -> rows
 
     for n, row in enumerate(rows, start=2):
         barcode = _clean_barcode(row["Barcode"])
@@ -134,6 +136,20 @@ def main() -> int:
         if not barcode:
             skipped.append((n, "no barcode"))
             continue
+
+        # The barcode rule, from app/catalogue.py so there is one copy of it.
+        # Added 13 Aug with the CHECK constraint: without this the importer
+        # dies on the export's ten non-numeric barcodes, and the laptop deploy
+        # runs the importer rather than copying the database.
+        #
+        # This normalises before it judges, so the gun's ']C1' rows are
+        # recovered under their real digits rather than dropped.
+        barcode, refused = parse_barcode(barcode)
+        if refused:
+            refused_barcodes[_clean_barcode(row["Barcode"])] += 1
+            skipped.append((n, f"barcode refused — {refused}"))
+            continue
+
         if not expiry:
             skipped.append((n, "unreadable expiry date"))
             continue
@@ -174,6 +190,12 @@ def main() -> int:
     print(f"  rows skipped               : {len(skipped)}")
     for n, why in skipped[:10]:
         print(f"      row {n}: {why}")
+    if refused_barcodes:
+        rows_lost = sum(refused_barcodes.values())
+        print(f"  barcodes refused by the rule: {len(refused_barcodes)}"
+              f" ({rows_lost} rows) — digits only, 6 to 18")
+        for raw, count in sorted(refused_barcodes.items(), key=lambda kv: -kv[1]):
+            print(f"      {raw[:40]!r}: {count} row(s)")
     if name_conflicts:
         print(f"  barcodes with >1 name      : {len(name_conflicts)} (first seen wins)")
         for bc, names in list(name_conflicts.items())[:10]:

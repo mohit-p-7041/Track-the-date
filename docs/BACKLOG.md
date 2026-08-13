@@ -234,10 +234,12 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
 1. `[x]` **Discount sheet shows past-date items.** No lower bound on the range, so 27 past-date
    rows printed among the 83. Bounded `>= today AND <= cutoff`; the sheet now prints 56 rows,
    exactly the home screen's "Due within 7 days" half. Done 13 Aug.
-2. `[ ]` **The barcode field accepts typed words.** Digits only, 6–18, after stripping the gun's
+2. `[x]` **The barcode field accepts typed words.** Digits only, 6–18, after stripping the gun's
    leading `]xx` AIM identifier. App-level message plus a `CHECK` constraint as the backstop.
-   The migration clears 10 legacy rows that fail it — QR-code URLs and one 40-digit gun misfire —
-   five of which are already duplicates of a properly scanned product.
+   Done 13 Aug. Normalising before judging turned out to matter: of the 10 legacy rows, **2 were
+   `]C1…` on a real code and were recovered**, and **8 were deleted** (7 marketing URLs, 1
+   40-digit gun misfire) with 13 batches. 952→944 products, 2340→2327 batches. The importer
+   applies the same rule, so the laptop deploy no longer dies on those rows.
 3. `[ ]` **Two statuses, and swipe to act.** `pulled` and `sold` are removed; a batch is `active`
    or `discounted`, and anything else is a real deletion. On the Due screen, **right→left
    deletes, left→right discounts**. Deleting a past-date item asks nothing; deleting one still in

@@ -8,29 +8,44 @@ against it — these numbers come from the actual import, not an estimate.
 | | |
 |---|---|
 | Rows | 2,343 |
-| Unique products (barcodes) | 952 |
-| Batches created | 2,340 |
+| Unique products (barcodes) | 944 |
+| Batches created | 2,327 |
 | Duplicate rows collapsed | 3 |
-| Rows skipped | 0 |
+| Rows skipped | 13 — barcodes the rule refuses |
 | Staff accounts | 2 — `BP TECOMA` (2,293 rows), `sar ob` (50 rows) |
 | Date range | 25 May 2026 → 30 Mar 2032 |
 
 Columns: `Id`, `Name`, `Barcode`, `Expiration Date`, `Category`, `Memo`, `Added User`,
 `Added Date`.
 
-The export is clean. Every row has a barcode and a readable date, and no barcode maps to two
-different product names. That's better than most real-world imports.
+**Revised 13 Aug, when the barcode rule landed.** The first import of this file produced 952
+products and 2,340 batches, and this page called the export clean. It is not quite: every row has
+a readable date and no barcode maps to two names, but **eight barcodes are not barcodes** — seven
+marketing URLs someone scanned off the packet instead of the code, and one 40-digit gun misfire.
+The importer now refuses them, which drops 13 rows.
+
+Two more were `]C1…` — the gun's AIM identifier stuck to a real code. Those are recovered rather
+than refused: the prefix is stripped and the digits underneath are kept, so `golden gay time
+lamington` and `magnum almond` survive with their history.
+
+To reproduce these numbers exactly, pin the import date — the expired/live split moves with the
+calendar otherwise:
+
+```bash
+python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10
+```
 
 ## After import, as at 10 Aug 2026
 
 | Group | Batches |
 |---|---|
-| Already expired (imported as `pulled`) | 583 |
+| Already expired (imported as `pulled`) | 581 |
 | Due within 7 days | 62 |
-| Upcoming | 1,695 |
-| **Live total** | **1,757** |
+| Upcoming | 1,684 |
+| **Live total** | **1,746** |
 
-2,340 batches + 3 collapsed duplicates = 2,343, reconciling exactly with the original row count.
+2,327 batches + 3 collapsed duplicates + 13 refused = 2,343, reconciling exactly with the
+original row count.
 
 ## Things worth knowing
 

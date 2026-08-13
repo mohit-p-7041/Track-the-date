@@ -8,6 +8,7 @@ the category rule have one implementation each, not one per screen.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import sqlite3
 
 LIVE = ("active", "discounted")
@@ -18,9 +19,50 @@ LIVE = ("active", "discounted")
 YEARS_BACK = 1
 YEARS_FORWARD = 10
 
+# A barcode is digits only, 6 to 18 of them. Decided 13 Aug: typed words are
+# the thing this rule exists to stop, and because a product is never deleted,
+# one junk row is permanent. See docs/ITERATION-2.md punch list item 1.
+BARCODE_MIN = 6
+BARCODE_MAX = 18
+
+# The gun announces the symbology first, as an AIM identifier — ']' and two
+# characters — ahead of the code itself. That is transport noise rather than
+# part of the barcode, so it is stripped instead of refused.
+AIM_PREFIX = re.compile(r"^\].{2}")
+
+# Explicitly ASCII 0-9. str.isdigit() also accepts '²' and '٣', which the
+# CHECK constraint in schema.sql refuses — and a rule whose two halves
+# disagree surfaces an IntegrityError instead of a sentence staff can read.
+ASCII_DIGITS = re.compile(r"[0-9]+\Z")
+
 
 def clean_barcode(value: str) -> str:
-    return (value or "").strip()
+    """Normalise what the gun or the keyboard produced. Does not validate.
+
+    Used on the lookup path too, so a gun-prefixed scan of a barcode the shop
+    already knows finds the existing product rather than inventing a new one.
+    """
+    return AIM_PREFIX.sub("", (value or "").strip())
+
+
+def parse_barcode(value: str) -> tuple[str, str]:
+    """Normalised barcode, or ("", reason). Same shape as parse_expiry.
+
+    `schema.sql` carries this rule again as a CHECK constraint, the way
+    idx_batches_unique_live backstops the duplicate rule: this is the check,
+    that is the backstop, and the message comes from here.
+    """
+    barcode = clean_barcode(value)
+    if not barcode:
+        return "", "Scan a barcode."
+    if not ASCII_DIGITS.match(barcode):
+        return "", "A barcode is digits only — scan it, or type the digits under it."
+    if len(barcode) < BARCODE_MIN or len(barcode) > BARCODE_MAX:
+        return "", (
+            f"A barcode is {BARCODE_MIN} to {BARCODE_MAX} digits. "
+            f"That one is {len(barcode)}."
+        )
+    return barcode, ""
 
 
 def clean_name(value: str) -> str:

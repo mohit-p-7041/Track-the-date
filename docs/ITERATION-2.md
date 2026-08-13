@@ -35,7 +35,7 @@ deploy.
 Five issues, from Mohit using the app on the iPad on 13 Aug. Ordered by what would hurt the
 first staff session most, not by the order they were reported.
 
-### 1. The barcode field accepts anything typed into it `[ ]`
+### 1. The barcode field accepts anything typed into it `[x]` — **done 13 Aug**
 
 Typing words into the barcode field creates a product. Nothing rejects it, and because products
 are never deleted that junk row is permanent.
@@ -52,7 +52,14 @@ actually are settled it the other way:
 |---|---|
 | 5 of the 9 | **already exist a second time under their proper numeric barcode** — Bundaberg ginger beer, bundaberg peach, Cadbury Marvellous Creations, sam's fruit lunch, golden gay time. Someone scanned the marketing QR instead of the barcode and created a duplicate product |
 | 4 of the 9 | have no numeric twin yet — magnum almond, In A Biscuit, Kit Kat Neapolitan 42g, Bundaberg traditional lemonade |
+
 | plus 1 numeric | `1930083008300830083008300830083008300830` — 40 digits, `1930083` repeating. A gun misfire |
+
+*Checked against the data on 13 Aug: the count of about five is right, two of the attributions are
+not.* `golden gay time` has **no** numeric twin, and `Bundaberg traditional lemonade 375ml` —
+listed here as having none — has a plausible one in `Bundaberg Lemonade` (`9311493002282`).
+It made no difference to the decision, and `magnum almond` ended up recovered rather than deleted
+in any case, but the list should not be trusted item by item.
 
 So they are not a category of valid barcode to protect. They are the same data-entry accident
 this item exists to prevent, already in the database. **10 products carrying 15 batches** fail
@@ -62,8 +69,38 @@ scans the actual barcode on the packet.
 Build it as: normalise (trim, strip a leading `]xx`), validate in `app/catalogue.py` with a plain
 message, and a `CHECK` constraint in `app/schema.sql` as the backstop, the same way
 `idx_batches_unique_live` backstops the duplicate rule. SQLite cannot add a constraint to an
-existing table, so this is a table rebuild in a migration — which must clear the 10 offending
+existing table, so this is a table rebuild in a migration — which must clear the offending
 products first, or the rebuild fails on them. Back up and take an Excel export before running it.
+
+**Built 13 Aug, and the count above is wrong in a way worth recording.** This item said the
+migration must clear all 10 offending products. It clears **8**. The other two are `]C1…` — the
+gun's AIM identifier stuck to a real barcode — and this item's own rule says that prefix is
+stripped as transport noise. Normalising *before* judging leaves 16 valid digits, so
+`golden gay time lamington` and `magnum almond` keep their names, batches and history instead of
+being deleted as junk. `magnum almond` is one of the four this item listed as having no numeric
+twin, so under "clear all 10" it would have been lost until someone rescanned the packet.
+
+Final numbers, run against the real database: **952 → 944 products, 2340 → 2327 batches.**
+
+Three things the build turned up that this item did not anticipate:
+
+- **`scripts/import_beep.py` needed the rule too.** It inserts products directly, so with the
+  CHECK constraint in place a fresh import dies on those 8 rows — and the laptop deploy is a fresh
+  import, not a copied database. It now applies `parse_barcode()` and reports what it refused.
+- **`check_db.py --expect-import` was already rotting.** `EXPECTED_PRE_EXPIRED` counts what was
+  expired *when the import ran*, so it drifts daily: 581 as at the export's own date, 608 by
+  13 Aug. Reproducing it needs `--today 2026-08-10`, which is now documented next to the
+  constant. This was true before this change; the number had simply never been reproduced on a
+  later day.
+- **`str.isdigit()` would have been a bug.** It returns True for `²` and `٣`, which the CHECK
+  constraint refuses — so the app would have accepted a barcode the database then rejected, and
+  staff would meet an IntegrityError page instead of a sentence. The rule uses an explicit
+  `[0-9]` match, and `test_the_two_barcode_layers_agree_on_unicode_digits` holds the two halves
+  together.
+
+The rebuild turns foreign keys **off**, and that is not incidental: with them on, `DROP TABLE
+products` performs an implicit `DELETE FROM`, which fires `batches`' `ON DELETE CASCADE` and takes
+every batch in the shop. Verified on a copy before the real run — 2327 batches after, not 0.
 
 ### 2. The discount sheet is full of past-date items `[x]` — **done 13 Aug**
 
@@ -269,7 +306,7 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 | | Item | Why here | Est. |
 |---|---|---|---|
 | 1 | ~~Sheet date range (item 2)~~ **done** | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
-| 2 | Barcode rule + migration (item 1) | Junk products are permanent; every hour of scanning adds more | 1½ hr |
+| 2 | ~~Barcode rule + migration (item 1)~~ **done** | Junk products are permanent; every hour of scanning adds more | 1½ hr |
 | 3 | Statuses + swipe (item 3) | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
 | 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
 | 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
@@ -289,7 +326,8 @@ check the numbers before touching `data/tecoma.db`.
 Then, unchanged from iteration 1 and still outstanding:
 
 - **Deploy to the shop laptop** — `git clone`, `pip install -r requirements.txt`, run the
-  importer there rather than copying `data/tecoma.db`. Expect `All 16 checks passed` from
+  importer there rather than copying `data/tecoma.db`, with `--today 2026-08-10` so the
+  numbers match. Expect `All 17 checks passed` from
   `check_db.py --expect-import`. Generate the laptop's own mkcert certificate for *its* IP, and
   reserve that IP on the router or the iPad bookmarks break between sessions.
 - **Real staff names and PINs** — settled: staff add themselves on the Settings screen at the

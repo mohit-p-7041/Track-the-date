@@ -28,6 +28,7 @@ from app.catalogue import (
     clean_name,
     get_product_by_barcode,
     live_batch,
+    parse_barcode,
     parse_expiry,
     resolve_category,
 )
@@ -56,7 +57,14 @@ def scan(
     conn: sqlite3.Connection = Depends(get_conn),
 ):
     """Step one: the barcode. Step two if a barcode came with the request."""
+    # Refused here as well as on the write path, so a typed word never opens
+    # the new-product form and nobody fills in a name for something that will
+    # be rejected on save. A rejected barcode falls back to step one, where
+    # the field is focused and ready for another scan.
+    message = ""
     barcode = clean_barcode(barcode)
+    if barcode:
+        barcode, message = parse_barcode(barcode)
 
     # What the last add saved, read back from the database rather than carried
     # in the browser — there is no client-side state between entries.
@@ -70,7 +78,9 @@ def scan(
         ).fetchone()
 
     product = get_product_by_barcode(conn, barcode) if barcode else None
-    return _page(request, conn, barcode=barcode, product=product, saved=saved)
+    return _page(
+        request, conn, barcode=barcode, product=product, saved=saved, message=message
+    )
 
 
 @router.post("/scan/add")
@@ -83,7 +93,7 @@ def add(
     conn: sqlite3.Connection = Depends(get_conn),
     user: dict = Depends(current_user),
 ):
-    barcode = clean_barcode(barcode)
+    barcode, bad_barcode = parse_barcode(barcode)
     name = clean_name(name)
     product = get_product_by_barcode(conn, barcode) if barcode else None
 
@@ -98,8 +108,9 @@ def add(
             typed={"name": name, "category": category},
         )
 
-    if not barcode:
-        return again("Scan a barcode.")
+    # Covers the empty field too — parse_barcode says "Scan a barcode." for it.
+    if bad_barcode:
+        return again(bad_barcode)
 
     expiry, problem = parse_expiry(expiry_date)
     if problem:

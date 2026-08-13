@@ -24,9 +24,24 @@ sys.path.insert(0, str(ROOT))
 from scripts.init_db import DB_PATH, connect  # noqa: E402
 
 # Verified numbers from data/imports/beep_2026-08-10.xlsx — see docs/DATA-NOTES.md
-EXPECTED_PRODUCTS = 952
-EXPECTED_BATCHES = 2340
-EXPECTED_PRE_EXPIRED = 583
+#
+# Revised 13 Aug, when the barcode rule landed. Eight barcodes in the export
+# are neither digits nor recoverable — seven marketing URLs and a 40-digit gun
+# misfire — and the importer now refuses them, taking 13 rows with them.
+# 952 - 8 = 944 products, 2340 - 13 = 2327 batches.
+#
+# Reproducing these needs the import date pinned:
+#
+#     python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx \
+#         --today 2026-08-10
+#
+# without which PRE_EXPIRED drifts every day, because it counts what was
+# already expired *when the import ran* — 581 as at the export's own date, 608
+# if imported on 13 Aug. That was true before this change too; the number was
+# simply never reproduced on a later day.
+EXPECTED_PRODUCTS = 944
+EXPECTED_BATCHES = 2327
+EXPECTED_PRE_EXPIRED = 581
 
 results: list[tuple[bool, str, str]] = []
 
@@ -73,6 +88,16 @@ def main() -> int:
 
     check(q("SELECT COUNT(*) FROM products WHERE barcode IS NULL OR TRIM(barcode) = ''") == 0,
           "Every product has a barcode")
+
+    # The barcode rule, added 13 Aug. A fresh database gets it from the CHECK
+    # constraint in schema.sql; an existing one needs
+    # `python scripts/migrate_barcodes.py`, and this is what says so.
+    offenders = q(f"""SELECT COUNT(*) FROM products
+                       WHERE NOT (length(barcode) BETWEEN 6 AND 18
+                                  AND barcode NOT GLOB '*[^0-9]*')""")
+    check(offenders == 0,
+          "Every barcode is 6 to 18 digits",
+          f"{offenders} fail the rule — run scripts/migrate_barcodes.py" if offenders else "")
 
     check(q("SELECT COUNT(*) FROM batches WHERE expiry_date NOT GLOB "
             "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'") == 0,

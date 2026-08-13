@@ -348,6 +348,89 @@ def test_batch_status_is_constrained(db, sample):
                    "VALUES (?, ?, ?)", (sample["products"]["monster"], days(67), "gone"))
 
 
+# ------------------------------------------------------------- the barcode rule
+#
+# Digits only, 6 to 18 of them, after stripping the gun's AIM identifier.
+# Decided 13 Aug: a product is never deleted, so a barcode typed as a word is
+# permanent. Two layers, and both are tested — app/catalogue.py produces the
+# sentence staff read, the CHECK constraint makes it impossible by any route.
+
+@pytest.mark.parametrize("value", [
+    "cool ridge water",                  # the actual bug: a typed name
+    "https://qrco.de/bdeRvm",            # a marketing QR, 5 of these are in the export
+    "www.ausbev.com.au",
+    "12345",                             # 5 digits, under the floor
+    "1" * 19,                            # 19, over the ceiling
+    "1930083008300830083008300830083008300830",   # the real 40-digit gun misfire
+    "93006 01234567",                    # embedded space
+    "9300601234567x",
+    "",
+    "   ",
+])
+def test_the_barcode_rule_refuses(value):
+    from app.catalogue import parse_barcode
+
+    barcode, problem = parse_barcode(value)
+    assert barcode == "", f"{value!r} was accepted"
+    assert problem, f"{value!r} was refused with no reason to show anybody"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("9300601234567", "9300601234567"),      # ordinary EAN-13
+    ("0000001051117", "0000001051117"),      # leading zeros are significant
+    ("123456", "123456"),                    # 6, the floor
+    ("1" * 18, "1" * 18),                    # 18, the ceiling
+    ("  9300601234567  ", "9300601234567"),  # whitespace from the gun
+    ("9300601234567\r\n", "9300601234567"),  # the gun's trailing newline
+    ("]C10118721274620198", "0118721274620198"),   # AIM identifier stripped
+    ("]E09300601234567", "9300601234567"),
+])
+def test_the_barcode_rule_accepts_and_normalises(value, expected):
+    """The prefix is the gun naming the symbology, not part of the code."""
+    from app.catalogue import parse_barcode
+
+    barcode, problem = parse_barcode(value)
+    assert not problem, f"{value!r} was refused: {problem}"
+    assert barcode == expected
+
+
+def test_the_barcode_check_constraint_is_the_backstop(db, sample):
+    """The app checks first; this is what makes it impossible another way."""
+    for value in ("cool ridge water", "https://qrco.de/bdeRvm", "12345", "1" * 19):
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+                       (value, "Should never exist"))
+
+
+def test_the_two_barcode_layers_agree_on_unicode_digits(db, sample):
+    """The subtle one. str.isdigit() is True for '٣' and '²'.
+
+    Had the app used it, those would pass the app and then hit the CHECK
+    constraint, so staff would get an IntegrityError page instead of a
+    sentence. The rule has to refuse the same things in both halves.
+    """
+    from app.catalogue import parse_barcode
+
+    for value in ("١٢٣٤٥٦٧٨", "9300601234567²", "½½½½½½"):
+        barcode, problem = parse_barcode(value)
+        assert problem, f"the app accepted {value!r}"
+        # And the database would have refused it too, so they cannot disagree.
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+                       (value, "Should never exist"))
+
+
+def test_a_gun_prefixed_scan_finds_the_existing_product(client, sample):
+    """Normalising on the lookup path too, or the gun invents a second product.
+
+    `sample` already holds 9300601234567. Scanning it with the prefix attached
+    must land on that product's date step, not the new-product form.
+    """
+    body = client.get("/scan?barcode=]C19300601234567").text
+    assert "Monster Ultra Zero 500ml" in body
+    assert "New barcode" not in body
+
+
 def test_deleting_a_product_removes_its_batches(db, sample):
     """ON DELETE CASCADE — no orphan batches, which check_db.py also asserts."""
     db.execute("DELETE FROM products WHERE id = ?", (sample["products"]["monster"],))
@@ -413,18 +496,29 @@ def test_a_barcode_keeps_its_leading_zeros(db, sample):
     assert cell.number_format == "@", "without a text format Excel re-reads it"
 
 
-def test_a_scanner_prefixed_barcode_survives(db, sample):
-    """]C1... and QR URLs are in the real data. Neither is a number."""
-    for barcode, name in ((']C10118721274620198', "Gun Prefix Item"),
-                          ("https://qrco.de/bdeRvm", "QR Code Item")):
-        db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)", (barcode, name))
-        db.execute("INSERT INTO batches (product_id, expiry_date) "
-                   "SELECT id, ? FROM products WHERE barcode = ?", (days(21), barcode))
+def test_a_long_barcode_is_not_turned_into_a_number(db, sample):
+    """Rewritten 13 Aug, when the barcode rule made the old fixtures illegal.
+
+    This used to insert ']C10118721274620198' and a QR-code URL, because both
+    were in the real data. Neither can exist now — the CHECK constraint refuses
+    them and the migration cleared the ones that were there.
+
+    The risk it was guarding is not gone though, it moved: an 18-digit numeric
+    barcode is exactly what Excel turns into 1.11E+17. So the case is now the
+    longest barcode the rule allows, which is a stronger test than the old one
+    — ']C1...' was safe from Excel precisely because it was not a number.
+    """
+    longest = "1" * 18
+    db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+               (longest, "Eighteen Digit Item"))
+    db.execute("INSERT INTO batches (product_id, expiry_date) "
+               "SELECT id, ? FROM products WHERE barcode = ?", (days(21), longest))
     db.commit()
 
-    sheet = _export(db)
-    assert _row_for(sheet, "Gun Prefix Item")[1].value == ']C10118721274620198'
-    assert _row_for(sheet, "QR Code Item")[1].value == "https://qrco.de/bdeRvm"
+    cell = _row_for(_export(db), "Eighteen Digit Item")[1]
+    assert cell.value == longest
+    assert isinstance(cell.value, str), "as a number this is 1.11E+17"
+    assert cell.number_format == "@", "without a text format Excel re-reads it"
 
 
 def test_expiry_is_a_real_date_never_a_us_string(db, sample):

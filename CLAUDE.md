@@ -33,10 +33,18 @@ These were considered and settled. Don't "improve" them into something else.
   decision about that item has already been made and staff are standing at the shelf holding it.
   Ask only for an `active` batch still in date: "this expires in N days, are you sure?". No JS
   `confirm()`; reveal the confirmation inline in the row.
-- **A barcode is digits only, 6–18 of them.** Amended 13 Aug. A leading AIM identifier (`]` plus
-  two characters) is stripped as transport noise from the gun; everything else must be digits or
-  it is refused. Typed words are the thing this exists to stop. The ten legacy rows that fail
-  this — QR-code URLs and one 40-digit gun misfire — were cleaned out when the rule landed.
+- **A barcode is digits only, 6–18 of them.** Amended 13 Aug, and **built** the same day. A
+  leading AIM identifier (`]` plus two characters) is stripped as transport noise from the gun;
+  everything else must be digits or it is refused. Typed words are the thing this exists to stop.
+  Two layers, deliberately: `parse_barcode()` in `app/catalogue.py` produces the sentence staff
+  read, and a `CHECK` constraint on `products.barcode` makes it impossible by any other route —
+  the same shape as `idx_batches_unique_live`. Never drop the constraint.
+  Normalise *before* judging: of the ten legacy rows that failed the rule, **two were `]C1…`
+  stuck to a real code and were recovered** (`golden gay time lamington`, `magnum almond`), and
+  **eight were deleted** — seven marketing URLs and one 40-digit gun misfire — taking 13 batches.
+  Ran 13 Aug via `scripts/migrate_barcodes.py`; 952→944 products, 2340→2327 batches.
+  Note that `str.isdigit()` is **not** the right test — it accepts `²` and `٣`, which the `CHECK`
+  refuses, and a rule whose halves disagree shows an IntegrityError instead of a message.
 - **PINs are accountability, not security.** 4 digits, LAN-only app. Don't add password
   complexity rules, lockouts, or session hardening. Do keep the audit trail accurate.
 - **No roles.** ~10 staff, one shop. Everyone can do everything, including adding categories and
@@ -91,6 +99,7 @@ data/
 scripts/
   init_db.py      create the database; also holds connect()
   import_beep.py  load the old app's Excel export
+  migrate_barcodes.py  one-off: put the barcode CHECK on an existing database
   check_db.py     sanity checks — run these
   backup.py       snapshot db + photos, keep last 7
   export_xlsx.py  every batch to one Excel sheet; the settings button calls this
@@ -115,7 +124,9 @@ python scripts/init_db.py --reset                            # destructive rebui
 python scripts/add_user.py "Name" 1234                       # first sign-in on a fresh database
 python scripts/add_user.py "Name" 4821 --reset               # forgotten PIN
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
-python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
+python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10
+python scripts/migrate_barcodes.py --db /tmp/copy.db --dry-run  # barcode rule, on a copy first
+python scripts/migrate_barcodes.py                           # then for real (asks first)
 python scripts/check_db.py                                   # run before committing
 python scripts/check_db.py --expect-import                   # also assert the import numbers
 python scripts/backup.py                                     # snapshot db + photos
@@ -164,11 +175,19 @@ explicitly and update it deliberately.
 ## The data
 
 The beep export at `data/imports/beep_2026-08-10.xlsx` is real production data: 2343 rows,
-952 unique products, 2 staff accounts. It imports cleanly to 2340 batches — see
-`docs/DATA-NOTES.md`. Use it for realistic testing rather than inventing fixtures.
+2 staff accounts. It imports to **944 products and 2327 batches** — see `docs/DATA-NOTES.md`.
+Use it for realistic testing rather than inventing fixtures.
+
+Pin the date to reproduce those numbers, or the expired/live split moves with the calendar:
+`python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10`.
+Without the pin the counts still import fine, but `check_db.py --expect-import` will disagree on
+the pre-expired total (581 as at the export's date, 608 by 13 Aug).
+
+Was 952 products and 2340 batches before 13 Aug; the barcode rule refuses 8 barcodes, and with
+them 13 rows.
 
 Every product imports with `category_id` NULL — the old app only ever had one category ('All'),
-so there was nothing to migrate. 583 batches were already expired at import and carry a note
+so there was nothing to migrate. 581 batches were already expired at import and carry a note
 saying so; leave them alone, staff clear that backlog as they rescan.
 
 Product names are messy in ways that matter for search: inconsistent case
@@ -180,7 +199,7 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 122 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 194 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
@@ -190,7 +209,7 @@ too, so it's safe to run on the shop laptop.
   "this cannot be done": the duplicate guard raises, categories collide case-insensitively,
   `au_date` never emits US format or a leading zero.
 
-**`python scripts/check_db.py`** — 12 structural checks against the real database, or 16 with
+**`python scripts/check_db.py`** — 13 structural checks against the real database, or 17 with
 `--expect-import`, which also asserts the original migration numbers.
 
 ### Adding tests
