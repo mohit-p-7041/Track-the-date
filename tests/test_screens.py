@@ -672,7 +672,6 @@ def test_a_product_with_no_photo_is_a_normal_state(client, sample):
 def test_sheet_lists_what_is_due_in_the_window(client, sample, db):
     body = client.get("/sheet").text
     assert "C/RIDGE WATER 1L" in body                  # due in 2 days
-    assert "Monster Ultra Zero 500ml" in body          # past date, still on the shelf
     far_off = db.execute(
         "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["outside"],)
     ).fetchone()[0]
@@ -686,7 +685,14 @@ def test_sheet_range_is_adjustable(client, sample, db):
     assert _au(far_off) in client.get("/sheet?days=45").text
 
 
-def test_sheet_groups_by_category_with_uncategorised_last(client, sample):
+def test_sheet_groups_by_category_with_uncategorised_last(client, sample, db):
+    """The categorised item needs an in-window date now the range is bounded."""
+    db.execute(
+        "INSERT INTO batches (product_id, expiry_date, status, added_by) "
+        "VALUES (?, ?, 'active', ?)",
+        (sample["products"]["monster"], days(3), sample["user_id"]),
+    )
+    db.commit()
     body = client.get("/sheet").text
     assert body.index("Energy Drinks") < body.index("No category")
     assert "Uncategorised" not in body
@@ -715,6 +721,56 @@ def test_sheet_hides_resolved_batches(client, sample, db):
         "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
     ).fetchone()[0]
     assert _au(resolved) not in client.get("/sheet").text
+
+
+def test_sheet_leaves_out_past_date_items(client, sample, db):
+    """Amended 13 Aug: the sheet is a pricing list, not the worklist.
+
+    A past-date item is not discounted, it is pulled off the shelf. Before this
+    the shop's real sheet opened with 27 of them ahead of the week's work.
+    """
+    overdue = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["overdue"],)
+    ).fetchone()[0]
+    body = client.get("/sheet").text
+    assert _au(overdue) not in body
+    assert "Monster Ultra Zero 500ml" not in body   # its only other date is 30 days out
+    assert "(past)" not in body                     # the marker has nothing left to mark
+
+
+def test_the_due_screen_still_shows_the_past_date_backlog(client, sample, db):
+    """The two screens diverge deliberately — this is the half that must not.
+
+    One definition of "due" survives: the Due screen is the worklist, and a
+    past-date item is the most urgent thing on it. If bounding the sheet ever
+    gets copied into home.py, this goes red.
+    """
+    overdue = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["overdue"],)
+    ).fetchone()[0]
+    body = client.get("/").text
+    assert _au(overdue) in body
+    assert "Monster Ultra Zero 500ml" in body
+
+
+def test_sheet_includes_an_item_expiring_today(client, sample, db):
+    """The lower bound is inclusive: today's stock still wants a sticker.
+
+    Asserted on a product name rather than on today's date, because the sheet
+    title prints today either way — checking the date alone passes against a
+    sheet bounded with `>` and catches nothing.
+    """
+    product_id = db.execute(
+        "INSERT INTO products (barcode, name) VALUES ('9300602222222', ?)",
+        ("Dies Today Yoghurt 170g",),
+    ).lastrowid
+    db.execute(
+        "INSERT INTO batches (product_id, expiry_date, status, added_by) "
+        "VALUES (?, ?, 'active', ?)",
+        (product_id, days(0), sample["user_id"]),
+    )
+    db.commit()
+    assert "Dies Today Yoghurt 170g" in client.get("/sheet").text
 
 
 def test_sheet_survives_an_absurd_range(client, sample):

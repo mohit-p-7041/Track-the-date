@@ -184,9 +184,15 @@ SPEC §4. The printable. Staff walk the aisles with it on the weekend.
 - [x] Print preview at A4 actually fits; check the page count for a realistic week
 
 Notes: printed to PDF at A4 and counted — **a realistic week (69 items on 11 Aug) is two pages**,
-about 35 lines each. It shows the same rows as the home screen, past-date ones included and
-marked "(past)", because two definitions of "due" would eventually disagree and the shelf would
-follow the wrong one.
+about 35 lines each.
+
+**Amended 13 Aug** (iteration 3 item 1): the range is bounded at both ends, so past-date items no
+longer print. Iteration 1 had this show exactly what the home screen shows, on the grounds that
+two definitions of "due" would disagree. They turned out not to be two definitions of one thing —
+the Due screen is a worklist and a past-date item is the most urgent thing on it, while this sheet
+is a pricing list and a past-date item is a pull, not a discount. One definition of "due"
+survives; the sheet is a narrower question asked of it. The `(past)` marker went with the change,
+having nothing left to mark.
 
 ## 8. Settings `[x]`
 
@@ -225,8 +231,9 @@ SPEC §9, and `docs/ITERATION-2.md` for what to pick up next and in what order.
 **The iPad punch list — iteration 3, and the current work.** Five issues came out of the first
 real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in priority order:
 
-1. `[ ]` **Discount sheet shows past-date items.** No lower bound on the range, so 83 rows of
-   backlog print before this week's. Bound it `>= today`.
+1. `[x]` **Discount sheet shows past-date items.** No lower bound on the range, so 27 past-date
+   rows printed among the 83. Bounded `>= today AND <= cutoff`; the sheet now prints 56 rows,
+   exactly the home screen's "Due within 7 days" half. Done 13 Aug.
 2. `[ ]` **The barcode field accepts typed words.** Digits only, 6–18, after stripping the gun's
    leading `]xx` AIM identifier. App-level message plus a `CHECK` constraint as the backstop.
    The migration clears 10 legacy rows that fail it — QR-code URLs and one 40-digit gun misfire —

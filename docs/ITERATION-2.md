@@ -65,14 +65,23 @@ message, and a `CHECK` constraint in `app/schema.sql` as the backstop, the same 
 existing table, so this is a table rebuild in a migration — which must clear the 10 offending
 products first, or the rebuild fails on them. Back up and take an Excel export before running it.
 
-### 2. The discount sheet is full of past-date items `[ ]`
+### 2. The discount sheet is full of past-date items `[x]` — **done 13 Aug**
 
-The printed sheet is what staff carry round the aisles on Saturday, and it currently opens with
-83 rows marked `(past)` before reaching anything expiring this week. `app/routes/sheet.py` has
-a cutoff but **no lower bound** — `WHERE b.expiry_date <= ?` — so every unresolved past date
-since the import is on the page.
+The printed sheet is what staff carry round the aisles on Saturday, and it opened with past-date
+rows before reaching anything expiring this week. `app/routes/sheet.py` had a cutoff but **no
+lower bound** — `WHERE b.expiry_date <= ?` — so every unresolved past date since the import was on
+the page.
 
 Fix: bound the range at both ends, `>= today AND <= cutoff`.
+
+**Corrected figure:** this item first said "83 rows marked `(past)`". 83 is the *total* the sheet
+printed; **27 of those were past-date**, which matches the number in "Resolved: what happens to a
+retired account's batches" below. Bounded, the sheet prints **56 rows** — exactly the home
+screen's "Due within 7 days — 56" half, with "Past date — 27" left on the worklist where it
+belongs. Verified against the real database, not the fixtures.
+
+The lower bound is inclusive, so an item expiring *today* still prints: it is on the shelf and
+still sellable. The `(past)` marker in `sheet.html` was removed with the change.
 
 **This deliberately amends a decision from iteration 1**, which said the sheet shows exactly
 what the home screen shows so that two definitions of "due" cannot disagree. The amendment is
@@ -259,7 +268,7 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 
 | | Item | Why here | Est. |
 |---|---|---|---|
-| 1 | Sheet date range (item 2) | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
+| 1 | ~~Sheet date range (item 2)~~ **done** | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
 | 2 | Barcode rule + migration (item 1) | Junk products are permanent; every hour of scanning adds more | 1½ hr |
 | 3 | Statuses + swipe (item 3) | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
 | 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
