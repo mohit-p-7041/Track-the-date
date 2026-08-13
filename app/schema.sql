@@ -94,7 +94,13 @@ CREATE TABLE IF NOT EXISTS batches (
     added_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
     added_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    resolved_at TEXT
+    resolved_at TEXT,
+    -- A date saved wrong used to live forever. Correcting one keeps the history
+    -- a delete-and-rescan throws away — who first recorded it, and when — so the
+    -- correction is attributed too. "Every write a person initiates records who"
+    -- is the point of having PINs at all. Added 13 Aug.
+    edited_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    edited_at   TEXT
 );
 
 -- THE DUPLICATION GUARD.

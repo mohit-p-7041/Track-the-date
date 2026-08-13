@@ -731,6 +731,82 @@ def test_an_unknown_resolution_is_refused(client, sample, status):
     assert response.status_code == 400
 
 
+def test_a_batch_date_can_be_corrected(client, sample, db, staff):
+    """Punch list item 5. A date saved wrong used to live forever."""
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+        data={"expiry_date": days(9)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    row = db.execute(
+        "SELECT expiry_date, edited_by, edited_at, added_by FROM batches WHERE id = ?",
+        (batch,),
+    ).fetchone()
+    assert row["expiry_date"] == days(9)
+    assert row["edited_by"] == staff["id"]
+    assert row["edited_at"] is not None
+    # Who first recorded it survives — that is what editing buys over a delete.
+    assert row["added_by"] == sample["user_id"]
+
+
+def test_correcting_a_date_onto_a_live_one_is_refused(client, sample, db):
+    """The same duplicate check as an add, from app/catalogue.py.
+
+    The Tim Tams have a live batch at +1 and another at +7. Moving the +7 onto
+    +1 is the duplicate the app exists to prevent, and it must say so rather
+    than surface an IntegrityError.
+    """
+    batch = sample["batches"]["due_edge"]          # curly, +7
+    response = client.post(
+        f"/products/{sample['products']['curly']}/batches/{batch}/date",
+        data={"expiry_date": days(1)},             # curly already has this, discounted
+    )
+    assert response.status_code == 200
+    assert "Already tracked" in response.text
+    assert db.execute("SELECT expiry_date FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == days(7), "the date moved anyway"
+
+
+def test_saving_a_date_unchanged_is_not_a_duplicate_of_itself(client, sample, db):
+    """Without excluding the row being edited, this finds itself and refuses."""
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+        data={"expiry_date": days(2)},             # the date it already has
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, "a batch was refused as its own duplicate"
+    assert db.execute("SELECT expiry_date FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == days(2)
+
+
+def test_a_corrected_date_still_refuses_an_implausible_year(client, sample, db):
+    """Same parse_expiry as the add path — a mistyped year poisons the due list."""
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+        data={"expiry_date": "2126-08-14"},
+    )
+    assert response.status_code == 200
+    assert "Check the year" in response.text
+    assert db.execute("SELECT expiry_date FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == days(2)
+
+
+def test_the_product_screen_shows_who_changed_a_date(client, sample, db):
+    """Attribution is the point — it sits alongside who added it, not instead."""
+    batch = sample["batches"]["due_soon"]
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+                data={"expiry_date": days(9)})
+    body = client.get(f"/products/{sample['products']['shouty']}").text
+    assert "date changed" in body
+    assert STAFF_NAME in body            # who corrected it
+    assert "Mohit" in body               # and who first recorded it
+
+
 def test_the_product_screen_hides_its_editing_controls(client, sample):
     """Punch list item 4. The pickers used to sit on screen permanently, so a
     saved category read like unfinished work rather than a saved fact."""

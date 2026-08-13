@@ -263,8 +263,9 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    13 Aug. `POST /products/{id}/edit` replaced the separate `/category` and `/photo` routes, so
    there is one form and one Save; a blank name is refused rather than silently kept, and a
    rejected photo saves none of it.
-5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
-   with new `edited_by` / `edited_at` columns.
+5. `[x]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
+   with new `edited_by` / `edited_at` columns. Done 13 Aug. `live_batch()` gained `exclude_id` so
+   a batch saved onto the date it already has is not refused as its own duplicate.
 6. `[x]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
    which is normal and recoverable. Says how many products it affects first, with the plural
    agreeing. Done 13 Aug. No new schema: `ON DELETE SET NULL` was already there, and a test now

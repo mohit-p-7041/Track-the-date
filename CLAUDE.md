@@ -103,6 +103,7 @@ scripts/
   import_beep.py  load the old app's Excel export
   migrate_barcodes.py  one-off: put the barcode CHECK on an existing database
   migrate_statuses.py  one-off: four statuses to two, and drop products.created_by
+  migrate_edit_columns.py  one-off: add batches.edited_by / edited_at (additive)
   check_db.py     sanity checks — run these
   backup.py       snapshot db + photos, keep last 7
   export_xlsx.py  every batch to one Excel sheet; the settings button calls this
@@ -132,6 +133,7 @@ python scripts/migrate_barcodes.py --db /tmp/copy.db --dry-run  # barcode rule, 
 python scripts/migrate_barcodes.py                           # then for real (asks first)
 python scripts/migrate_statuses.py --db /tmp/copy.db --dry-run  # two statuses, on a copy first
 python scripts/migrate_statuses.py                           # then for real (asks first)
+python scripts/migrate_edit_columns.py                       # edited_by / edited_at; additive
 python scripts/check_db.py                                   # run before committing
 python scripts/check_db.py --expect-import                   # also assert the import numbers
 python scripts/backup.py                                     # snapshot db + photos
@@ -159,7 +161,10 @@ explicitly and update it deliberately.
   index is the backstop. Never drop it. It is partial (`WHERE status IN (...)`) for historical
   reasons; with only two live statuses left it now covers every row, and that is correct — a
   deleted batch is gone, so its date is free to be used again with no exclusion needed.
-- Every write that a person initiates records `added_by` / `resolved_by`.
+- Every write that a person initiates records who: `added_by` when a batch is created,
+  `resolved_by` when it is discounted, `edited_by` / `edited_at` when its date is corrected. The
+  correction sits *alongside* who added it rather than replacing them — keeping that history is
+  the reason editing a date exists instead of delete-and-rescan.
 - **Always open the database via `scripts.init_db.connect()`**, never `sqlite3.connect()`
   directly. `foreign_keys` and `synchronous` are per-connection pragmas — a raw connect silently
   drops both, which loses referential integrity and crash durability.
@@ -210,7 +215,7 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 232 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 238 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 

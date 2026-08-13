@@ -223,7 +223,7 @@ thing. Consequences worth recording:
 - The barcode is deliberately not editable. It is the product's identity; a wrong one is a
   different product, and the barcode rule already governs how one gets created.
 
-### 5. Edit a batch's expiry date `[ ]`
+### 5. Edit a batch's expiry date `[x]` — **done 13 Aug**
 
 A date saved wrong currently lives forever. Item 3 makes delete-and-rescan possible, which is
 enough to recover, but editing keeps the history — who first recorded it, and when — where a
@@ -239,6 +239,20 @@ Assessed against the logic flow, and **it does not break it**, provided:
 
 Lower priority than item 3: delete-and-rescan already recovers from the mistake, so this buys
 tidiness and a better audit trail rather than a capability that is missing.
+
+**Built 13 Aug.** Both conditions hold. `live_batch()` gained an `exclude_id` argument, which was
+the one thing this item did not foresee: without it a batch saved onto the date it already has
+finds *itself* and is refused as its own duplicate.
+
+Worth recording about the testing. The app-level duplicate check and
+`idx_batches_unique_live` deliberately produce the same message — "nobody needs to know which
+layer noticed" — so removing the app-level check does **not** turn the screen test red: the index
+raises, the route catches it, and the response is identical. That is the design working, but it
+means a black-box test cannot tell the two layers apart, so the app-level check is pinned directly
+in `test_rules.py` instead. The same shape as the barcode rule's two layers.
+
+The migration is the only additive one in this iteration — `ALTER TABLE ADD COLUMN` needs no
+rebuild and deletes nothing, so 1746 rows came through untouched.
 
 ### Resolved: what happens to a retired account's batches
 
@@ -351,7 +365,7 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 | 3 | ~~Statuses + swipe (item 3)~~ **done** | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
 | 4 | ~~Delete categories (item 6)~~ **done** | Small, and a typo in the filter list is permanent today | 30 min |
 | 5 | ~~Edit toggle + rename (item 4)~~ **done** | Clutter on the busiest screen after Scan | 1 hr |
-| 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
+| 6 | ~~Edit expiry date (item 5)~~ **done** | Only if Friday has room; item 3 already covers recovery | 1 hr |
 | — | ~~Drop `products.created_by` (item 7)~~ **done** | Rode along with item 3's migration as planned | — |
 | — | Photo mount path (item 8) | Test-rig only. After Saturday | — |
 

@@ -16,9 +16,15 @@ from fastapi.responses import RedirectResponse
 
 from app import photos
 from app.auth import current_user
-from app.catalogue import categories, clean_name, resolve_category
+from app.catalogue import (
+    categories,
+    clean_name,
+    live_batch,
+    parse_expiry,
+    resolve_category,
+)
 from app.db import get_conn
-from app.views import render, setting
+from app.views import au_date, render, setting
 
 router = APIRouter()
 
@@ -154,10 +160,12 @@ def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int,
     batches = conn.execute(
         """SELECT b.*,
                   a.name AS added_by_name,
-                  r.name AS resolved_by_name
+                  r.name AS resolved_by_name,
+                  e.name AS edited_by_name
              FROM batches b
         LEFT JOIN users a ON a.id = b.added_by
         LEFT JOIN users r ON r.id = b.resolved_by
+        LEFT JOIN users e ON e.id = b.edited_by
             WHERE b.product_id = ?
          ORDER BY b.expiry_date""",
         (product_id,),
@@ -275,6 +283,69 @@ def resolve_batch(
     )
     conn.commit()
     return RedirectResponse(_back(next, product_id), status_code=303)
+
+
+@router.post("/products/{product_id}/batches/{batch_id}/date")
+def edit_batch_date(
+    request: Request,
+    product_id: int,
+    batch_id: int,
+    expiry_date: str = Form(""),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Correct a date that was saved wrong.
+
+    Deleting and rescanning already recovered from this, so what editing buys is
+    the history that a delete throws away: who first recorded the batch, and
+    when. Those stay, and the correction is attributed on top with
+    `edited_by` / `edited_at`.
+
+    It goes through the same two checks an add does, from app/catalogue.py, so
+    there is one implementation of each:
+
+      - `parse_expiry` — no US format, and an implausible year is refused
+      - `live_batch` — moving a date onto one the product already has live is
+        refused exactly as adding it would be, and `idx_batches_unique_live` is
+        still the backstop underneath
+    """
+    batch = conn.execute(
+        "SELECT id, expiry_date FROM batches WHERE id = ? AND product_id = ?",
+        (batch_id, product_id),
+    ).fetchone()
+    if batch is None:
+        raise HTTPException(status_code=404)
+
+    expiry, problem = parse_expiry(expiry_date)
+    if problem:
+        return _detail_page(request, conn, product_id, message=problem)
+
+    # Excluding this batch: saving the date it already has is a no-op, not a
+    # clash with itself.
+    clash = live_batch(conn, product_id, expiry.isoformat(), exclude_id=batch_id)
+    if clash:
+        return _detail_page(
+            request, conn, product_id,
+            message=f"Already tracked — expires {au_date(clash['expiry_date'])}.",
+        )
+
+    try:
+        conn.execute(
+            "UPDATE batches SET expiry_date = ?, edited_by = ?, edited_at = datetime('now') "
+            "WHERE id = ? AND product_id = ?",
+            (expiry.isoformat(), user["id"], batch_id, product_id),
+        )
+    except sqlite3.IntegrityError:
+        # The index caught it. Same words either way — nobody needs to know
+        # which layer noticed.
+        conn.rollback()
+        return _detail_page(
+            request, conn, product_id,
+            message=f"Already tracked — expires {au_date(expiry)}.",
+        )
+
+    conn.commit()
+    return RedirectResponse(f"/products/{product_id}", status_code=303)
 
 
 @router.post("/products/{product_id}/batches/{batch_id}/delete")

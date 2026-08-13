@@ -74,6 +74,30 @@ def test_a_date_can_repeat_once_the_batch_is_deleted(db, sample):
                (product, date))  # must not raise
 
 
+def test_the_duplicate_check_can_exclude_the_row_being_edited(db, sample):
+    """`live_batch(exclude_id=...)`, which is what makes editing a date possible.
+
+    Tested here rather than through the screen because both layers deliberately
+    produce the same message — the app catches the duplicate first, the index
+    backstops it, and "nobody needs to know which layer noticed". From outside
+    the route the two are indistinguishable, so the app-level check is pinned
+    directly.
+    """
+    from app.catalogue import live_batch
+
+    product = sample["products"]["curly"]
+    edge = sample["batches"]["due_edge"]        # +7
+    taken = days(1)                             # the discounted batch's date
+
+    # Moving +7 onto +1 collides with the other batch.
+    assert live_batch(db, product, taken, exclude_id=edge) is not None
+
+    # Saving +7 back onto +7 finds only itself, which is not a collision.
+    assert live_batch(db, product, days(7), exclude_id=edge) is None
+    # And without the exclusion it does find itself — the bug this guards.
+    assert live_batch(db, product, days(7)) is not None
+
+
 def test_same_date_different_products_is_fine(db, sample):
     date = days(63)
     db.execute("INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)",

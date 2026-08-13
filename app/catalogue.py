@@ -172,15 +172,26 @@ def needs_confirmation(status: str, expiry, today=None) -> bool:
     return status == "active" and remaining is not None and remaining >= 0
 
 
-def live_batch(conn: sqlite3.Connection, product_id: int, expiry: str) -> sqlite3.Row | None:
+def live_batch(
+    conn: sqlite3.Connection,
+    product_id: int,
+    expiry: str,
+    exclude_id: int | None = None,
+) -> sqlite3.Row | None:
     """The batch that makes this a duplicate, if there is one.
 
     Checked before insert so the person is told "already tracked, expires
     such-and-such" instead of meeting an IntegrityError. The partial unique
     index idx_batches_unique_live is the backstop, not the check.
+
+    `exclude_id` is for editing an existing batch: without it a batch saved onto
+    the date it already has would find itself and be refused as its own
+    duplicate. Adding a batch passes nothing, and nothing is excluded.
     """
-    return conn.execute(
-        "SELECT id, expiry_date FROM batches "
-        "WHERE product_id = ? AND expiry_date = ? AND status IN ('active','discounted')",
-        (product_id, expiry),
-    ).fetchone()
+    sql = ("SELECT id, expiry_date FROM batches "
+           "WHERE product_id = ? AND expiry_date = ? AND status IN ('active','discounted')")
+    params: list = [product_id, expiry]
+    if exclude_id is not None:
+        sql += " AND id != ?"
+        params.append(exclude_id)
+    return conn.execute(sql, params).fetchone()

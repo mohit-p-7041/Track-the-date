@@ -91,6 +91,12 @@
             {%- if b.resolved_at %} &middot; Discounted
               {%- if b.resolved_by_name %} by {{ b.resolved_by_name }}{% endif %} {{ b.resolved_at | au_when }}
             {%- endif %}
+            {#- The correction is attributed too, and it sits alongside who added
+                it rather than replacing them — keeping that is the whole reason
+                editing exists instead of delete-and-rescan. -#}
+            {%- if b.edited_at %} &middot; date changed
+              {%- if b.edited_by_name %} by {{ b.edited_by_name }}{% endif %} {{ b.edited_at | au_when }}
+            {%- endif %}
           </span>
           {% if b.note %}<span class="item-meta">{{ b.note }}</span>{% endif %}
         </span>
@@ -100,6 +106,20 @@
            in app/catalogue.py. It is revealed inline rather than through a JS
            confirm(), and the no-JS path is the same two taps. #}
         <span class="actions">
+          {# Correcting a date keeps who first recorded it and when, which a
+             delete-and-rescan throws away. Same duplicate check as an add. #}
+          <details class="confirm">
+            <summary class="btn btn-quiet btn-small">Change date</summary>
+            <span class="confirm-body">
+              <form class="row-form" method="post"
+                    action="/products/{{ product.id }}/batches/{{ b.id }}/date">
+                <input class="field" type="date" name="expiry_date"
+                       value="{{ b.expiry_date }}" required>
+                <button class="btn btn-small" type="submit">Save date</button>
+              </form>
+            </span>
+          </details>
+
           {% if b.status == 'active' %}
             <form method="post" action="/products/{{ product.id }}/batches/{{ b.id }}">
               <button class="btn btn-quiet btn-small" name="status" value="discounted">Discount</button>
