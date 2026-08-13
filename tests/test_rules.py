@@ -374,6 +374,40 @@ def test_synchronous_is_full(db):
     assert db.execute("PRAGMA synchronous").fetchone()[0] == 2
 
 
+def test_the_database_path_can_be_pointed_elsewhere(tmp_path, monkeypatch):
+    """`TTD_DB`, the sibling of `TTD_PHOTO_DIR`. Unset in production.
+
+    Added so the LAN test server can run against a copy of the shop's data. The
+    actions the iPad session exercises are a real delete and a real discount, and
+    without this the only way to try them on realistic data was to move
+    data/tecoma.db aside by hand and hope to put it back.
+    """
+    import importlib
+
+    import scripts.init_db as init_db
+
+    # Unset, it resolves to the shop's file — the production path.
+    monkeypatch.delenv("TTD_DB", raising=False)
+    importlib.reload(init_db)
+    assert init_db.DB_PATH == init_db.ROOT / "data" / "tecoma.db"
+
+    # Set, everything that goes through connect() follows it.
+    elsewhere = tmp_path / "copy.db"
+    monkeypatch.setenv("TTD_DB", str(elsewhere))
+    importlib.reload(init_db)
+    assert init_db.DB_PATH == elsewhere
+
+    conn = init_db.connect()
+    conn.execute("CREATE TABLE probe (x INTEGER)")
+    conn.commit()
+    conn.close()
+    assert elsewhere.exists(), "connect() wrote somewhere else entirely"
+
+    # Leave the module as the rest of the suite expects to find it.
+    monkeypatch.delenv("TTD_DB", raising=False)
+    importlib.reload(init_db)
+
+
 def test_barcodes_are_unique(db, sample):
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
