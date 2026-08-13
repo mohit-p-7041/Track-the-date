@@ -69,12 +69,14 @@ data/
   tecoma.db       the database — never commit
   photos/         compressed product images — never commit
   backups/        snapshots written at startup — never commit
+  exports/        spreadsheets written by export_xlsx.py — never commit
   imports/        the beep Excel export
 scripts/
   init_db.py      create the database; also holds connect()
   import_beep.py  load the old app's Excel export
   check_db.py     sanity checks — run these
   backup.py       snapshot db + photos, keep last 7
+  export_xlsx.py  every batch to one Excel sheet; the settings button calls this
   show_address.py print the URL for the iPads
 docs/
   BACKLOG.md      what to build next, in order, with acceptance criteria
@@ -97,6 +99,7 @@ python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
 python scripts/check_db.py                                   # run before committing
 python scripts/check_db.py --expect-import                   # also assert the import numbers
 python scripts/backup.py                                     # snapshot db + photos
+python scripts/export_xlsx.py                                # data/exports/tecoma-<date>.xlsx
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload      # dev server
 ```
 

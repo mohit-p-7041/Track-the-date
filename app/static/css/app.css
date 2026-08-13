@@ -4,6 +4,16 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute must actually hide things.
+   The browser's own rule for it is only `[hidden] { display: none }`, which
+   any author rule setting `display` outranks — and `.btn` sets
+   `display: inline-block`. So the camera button, hidden in the HTML and
+   revealed by JavaScript only where a camera exists, was on screen anyway on
+   every device without one: visible, and completely inert, because the script
+   returns before it binds a click. Exactly the "present and broken" state it
+   was written to avoid. Found on an iPad over plain http. */
+[hidden] { display: none !important; }
+
 html {
   -webkit-text-size-adjust: 100%;
 }

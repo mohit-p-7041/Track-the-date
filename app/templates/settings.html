@@ -108,6 +108,20 @@
     </div>
   {% endif %}
 
+  <h2 class="head">Export</h2>
+  <div class="card">
+    <a class="btn btn-quiet" href="/settings/export.xlsx">Export to Excel</a>
+    <p class="note">
+      One sheet, one row per date &mdash; {{ batch_count }} of them, including
+      the ones already pulled, so waste can be looked at later. Filter the
+      Status column to see only what is still on the shelf.
+    </p>
+    <p class="note">
+      This is a copy for reading, not a backup. Exporting changes nothing, and
+      editing the spreadsheet does not change the app.
+    </p>
+  </div>
+
   <h2 class="head">Backup</h2>
   <div class="card">
     <form method="post" action="/settings/backup">

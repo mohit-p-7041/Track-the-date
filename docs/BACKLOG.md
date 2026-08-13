@@ -202,6 +202,7 @@ SPEC §3.7. Open to everyone — there are no roles.
 - [x] The list can never be emptied — the last active account refuses
 - [x] An account taken off the list stops being able to write, including from a session
       already signed in as it
+- [x] Export every recorded date to Excel
 
 Notes: **the two imported accounts still have the placeholder PIN `1234`.** Set the real names and
 PINs on this screen before the first staff session — that is now a job for the shop, not a script.
@@ -243,10 +244,28 @@ shop's own data, and a decode fills the barcode field and submits the ordinary l
 verified on an iPad** — that needs the certificates, and it is the one thing left to confirm in
 person, along with holding a real barcode in front of a real camera.
 
+*Bug found and fixed 12 Aug*, serving the app over plain http on the LAN to see what an iPad
+would get. The camera button is shipped `hidden` and revealed by JavaScript only where
+`getUserMedia` exists — but the browser's own rule is just `[hidden] { display: none }`, and
+`.btn` sets `display: inline-block`, which outranks it. So on every device without a camera the
+button was drawn anyway, and tapping it did nothing at all: scanner.js returns before it binds a
+click. `app.css` now re-asserts `[hidden]` with `!important`, and `test_the_hidden_attribute_
+actually_hides` keeps it there. Worth knowing that the acceptance test for the certificates —
+"the Camera button appears" — was reading a button that appeared regardless.
+
 **Deploy to the shop laptop, and training notes** — day 3.
 
-**Excel export** — day 3, deliberately deferred until now. The startup backup already protects
-the data, so this is for the manager's convenience rather than safety.
+**Excel export** — *built*. A button on the settings screen, and `python scripts/export_xlsx.py`
+on the laptop; both go through the same code. One sheet, one row per batch, resolved ones
+included so waste can be reviewed — filter the Status column to get back to the shelf. Live rows
+sort first, because by date alone the shop's 583 pulled rows sit above everything that still
+matters.
+
+*Verified against the real data:* 2,340 rows, 139 KB, served in under 200 ms. The things that
+would have gone wrong quietly all hold — `0000001051117` keeps its leading zeros instead of
+becoming 1.05E+06, the scanner's `]C1…` codes and the QR-URL barcodes survive, expiry is a real
+Excel date so it can never render US-style, timestamps read in shop time, and the Korean product
+name comes through. It stays a copy for reading: exporting writes nothing.
 
 **Dry run at the counter** — day 4. Gun plus one iPad, on the real laptop, before staff see it.
 

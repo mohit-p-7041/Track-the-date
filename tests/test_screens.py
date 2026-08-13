@@ -1055,6 +1055,89 @@ def test_backup_snapshots_the_database_the_app_is_using(client, db_path, sample)
     copy.close()
 
 
+# ----------------------------------------------------------- the Excel export
+
+def _sheet(response):
+    """The one worksheet in a downloaded export."""
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    return load_workbook(BytesIO(response.content)).active
+
+
+def test_settings_offers_the_export(client, sample):
+    body = client.get("/settings").text
+    assert "/settings/export.xlsx" in body
+    assert "Export to Excel" in body
+    assert "5 of them" in body                    # sample has five batches
+
+
+def test_the_export_downloads_as_a_spreadsheet(client, sample):
+    import datetime as dt
+
+    response = client.get("/settings/export.xlsx")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert f"tecoma-{dt.date.today().isoformat()}.xlsx" in disposition
+
+
+def test_the_export_has_one_row_per_batch_and_a_header(client, sample):
+    sheet = _sheet(client.get("/settings/export.xlsx"))
+    assert sheet.max_row == 6                      # header + five batches
+    headings = [c.value for c in sheet[1]]
+    assert headings[:6] == ["Product", "Barcode", "Category", "Expiry",
+                            "Days left", "Status"]
+
+
+def test_the_export_includes_resolved_batches(client, sample):
+    """Pulled rows are kept so waste can be reviewed — the export is where."""
+    sheet = _sheet(client.get("/settings/export.xlsx"))
+    statuses = [row[5].value for row in sheet.iter_rows(min_row=2)]
+    assert "pulled" in statuses
+    assert statuses.count("active") == 4
+
+
+def test_the_export_opens_on_what_is_still_on_the_shelf(client, sample):
+    """Live rows first, soonest first. Sorted by date alone, the shop's 583
+    pulled rows sit above everything that still matters."""
+    statuses = [row[5].value for row in _sheet(client.get("/settings/export.xlsx"))
+                .iter_rows(min_row=2)]
+    assert statuses[0] == "active"
+    assert statuses[-1] == "pulled"
+    assert statuses.index("pulled") == 4, "a resolved row is mixed in among the live ones"
+
+
+def test_the_export_shows_uncategorised_as_blank_not_a_word(client, sample):
+    """There is no 'Uncategorised' category and the export must not invent one."""
+    sheet = _sheet(client.get("/settings/export.xlsx"))
+    categories = [row[2].value for row in sheet.iter_rows(min_row=2)]
+    assert None in categories
+    assert "Uncategorised" not in str(categories)
+
+
+def test_the_export_counts_days_from_today(client, sample):
+    sheet = _sheet(client.get("/settings/export.xlsx"))
+    by_days = {row[4].value for row in sheet.iter_rows(min_row=2)}
+    assert -4 in by_days                            # sample's overdue batch
+    assert 7 in by_days                             # the one on the window edge
+
+
+def test_the_export_names_who_added_each_row(client, sample):
+    sheet = _sheet(client.get("/settings/export.xlsx"))
+    assert {row[7].value for row in sheet.iter_rows(min_row=2)} == {"Mohit"}
+
+
+def test_the_export_is_behind_the_pin(anon_client, sample):
+    response = anon_client.get("/settings/export.xlsx", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")
+
+
 def test_settings_has_no_role_or_admin_anything(client):
     body = client.get("/settings").text.lower()
     for word in ("admin", "manager", "role", "permission"):

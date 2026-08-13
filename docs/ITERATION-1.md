@@ -174,11 +174,18 @@ Do this first and it is done for good.
 - Confirm afterwards: sign in as two different people, add a batch as each, and check the product
   screen shows the right name against each date.
 
-### 2. HTTPS via mkcert, and the certificates onto the iPads — day 2
+### 2. HTTPS via mkcert, and the certificates onto the iPads — day 2, **blocked on one command**
 
 `start.bat` already switches by itself when `certs/` exists. No code change expected.
 
+`mkcert` itself is installed (`brew install mkcert`, run by Mohit, v1.4.4). **`mkcert -install`
+has not run** — checked directly on 12 Aug: no `rootCA.pem`, no CA directory, nothing in the
+login keychain. It needs to run in an interactive terminal (Terminal.app), not from an assistant
+session, because on macOS it shells out to `sudo security add-trusted-cert` and needs a password
+prompt to answer. This is the actual next step blocking everything below it.
+
 ```
+mkcert -install                                             # Mohit runs this, in Terminal.app
 mkcert -key-file certs\key.pem -cert-file certs\cert.pem <laptop-ip>
 ```
 
@@ -189,24 +196,38 @@ Also reserve the laptop's IP on the router, or the iPad bookmarks break between 
 
 Acceptance: an iPad loads `https://<ip>:8443`, signs in, and the **Camera** button on a product
 screen opens a camera. That button is already built and hides itself where `getUserMedia` is
-unavailable, so it appearing is the proof the certificates worked.
+unavailable, so it appearing is the proof the certificates worked. **This acceptance test used to
+be weaker than it looked — see item 3.**
 
-### 3. Camera scanning in the aisles — day 2, straight after
+### 3. Camera scanning in the aisles — **built and merged**, one real bug found since
 
-The only backlog feature genuinely missing. SPEC §3.3, SPEC §8 names ZXing-js.
+SPEC §3.3, SPEC §8 names ZXing-js. Merged to `main` via PR #2 (`92734f7`): ZXing 0.21.3 vendored
+into `app/static/vendor/`, no CDN, loaded on first tap rather than up front so the counter path
+pays nothing for it. A "Scan with camera" button on `/scan`, meant to be visible only where
+`getUserMedia` exists, filling the same barcode field and submitting the same form.
 
-- Vendor ZXing-js into `app/static/vendor/`. **No CDN link** — the app must work with the internet
-  down.
-- Add a "Scan with camera" button to `/scan`, visible only where a camera is available, filling the
-  existing barcode field and submitting the same form. Do not build a second add path.
-- The counter path must not change. The gun plus keyboard is what gets used hundreds of times a
-  week; the camera is for the aisles.
+Acceptance criteria, all met:
+- [x] The camera button is absent where `getUserMedia` is unavailable, and the gun path is unaffected
+- [x] A decoded barcode goes into the same lookup as a typed one — one route, one duplicate check
+- [x] The vendored library is served from `/static/vendor/`, with no external request anywhere
+- [x] Nothing about the counter flow changes: scan, type date, Enter
 
-Acceptance criteria to write as tests:
-- [ ] The camera button is absent where `getUserMedia` is unavailable, and the gun path is unaffected
-- [ ] A decoded barcode goes into the same lookup as a typed one — one route, one duplicate check
-- [ ] The vendored library is served from `/static/vendor/`, with no external request anywhere
-- [ ] Nothing about the counter flow changes: scan, type date, Enter
+**Bug found 12 Aug, serving the app on the LAN to test from an iPad.** The button was on screen
+over plain HTTP — a page where the camera cannot work. The JS-side gate was correct
+(`isSecureContext: false`, `getUserMedia` undefined, the button's `hidden` attribute correctly
+set), but the browser's own rule for `hidden` is just `[hidden] { display: none }`, and `.btn`
+sets `display: inline-block`, which outranks it. The button was drawn anyway, and tapping it did
+nothing — `scanner.js` returns before it binds a click. Fixed with one CSS rule
+(`[hidden] { display: none !important; }` in `app/static/css/app.css`) plus
+`test_the_hidden_attribute_actually_hides` in `tests/test_rules.py`, break-checked both ways
+(remove the rule, drop `!important`) — both go red.
+
+**This fix is not yet on `main`** — it's uncommitted on the `excel-export` branch along with the
+export work (see item 5). Until it lands, the item 2 acceptance test above — "the Camera button
+appearing proves the certificates worked" — is checking a button that appeared regardless of
+whether they did.
+
+Still not verified: a real camera reading a real barcode on a real iPad. That needs item 2 done.
 
 ### 4. Deploy to the shop laptop — day 3
 
@@ -216,13 +237,25 @@ diverging is the one unrecoverable mistake available here.
 
 Run `python scripts\check_db.py --expect-import` on the laptop and expect **All 16 checks passed**.
 
-### 5. Excel export — day 3
+### 5. Excel export — **done**, built day 2
 
-Deferred deliberately since the start; the startup backup already protects the data, so this is for
-the manager rather than for safety. `openpyxl` is already in `requirements.txt`.
+`scripts/export_xlsx.py`, called both by the Settings button and from the command line.
 
-Suggested: a button in Settings writing one sheet of every live batch — product, barcode, category,
-expiry, status, added by, added at. Nothing clever.
+Built wider than suggested in one respect: **every** batch, not only the live ones. `CLAUDE.md`
+keeps pulled and sold rows "so waste can be reviewed later", and a spreadsheet is where that
+review would actually happen — the Status column filters back to the shelf in one click. Live
+rows sort first, or the shop's 583 pulled rows sit above everything that still matters.
+
+Worth knowing if this is ever changed: the export is where Excel gets to reinterpret the data,
+and `tests/test_rules.py` pins the four places that showed up as real. Barcodes are text
+(`0000001051117` is a real product, and a number eats the zeros); expiry is a real date (a string
+is Excel's to guess at, and its guess is US order); timestamps are shifted to GMT+10 but a
+date-only `resolved_at` is not, because +10h would invent a 10am nobody recorded; and a name
+starting with `=` is forced to text rather than becoming a formula.
+
+**Not yet on `main`.** Built and verified on the `excel-export` branch — 2,340 rows, 139 KB,
+served in under 200 ms against a copy of the real database, downloaded file reopens cleanly. Not
+yet committed.
 
 ### 6. Training notes — day 3
 
@@ -237,6 +270,46 @@ number that matters is seconds per item, and it should be about five.
 ### 8. First staff session — day 5, Sat 15 Aug
 
 Keep the day otherwise empty. The first session always surfaces something.
+
+---
+
+## Session — 12 August 2026
+
+Picked up with `camera-scanning` built but not merged, and `mkcert` binary installed but its CA
+not yet created. What happened, in order:
+
+1. **Merged `camera-scanning` to `main`** as PR #2 (`92734f7`), then branched `excel-export` off
+   the clean result — see item 3 above for what shipped.
+2. **Built item 5, the Excel export**, end to end: `scripts/export_xlsx.py`, a button on
+   Settings, 18 new tests, 19/19 break-checked. Details under item 5 above.
+3. **Served the app on the LAN** (`0.0.0.0:8000`, against a throwaway copy of `data/tecoma.db`)
+   so Mohit could test from his MacBook and home iPad while `mkcert -install` was still
+   outstanding. Confirmed working on both for every screen except the camera, which needs HTTPS.
+4. **Found and fixed the `[hidden]` CSS bug** described under item 3 — the camera button was
+   rendering (inert) on insecure origins. This was live on `main` until fixed here.
+5. **Checked `mkcert -install` directly** rather than taking "it is done" at face value: no CA
+   directory, no keychain entry. Diagnosed why (needs an interactive terminal for the admin
+   password prompt) and handed back the exact command to run in Terminal.app.
+6. Stopped the background LAN server before closing out — nothing should keep listening on
+   `0.0.0.0:8000` between sessions.
+
+**State at close of session:**
+
+| | |
+|---|---|
+| Tests | 166 passing (`pytest`) — was 147 after the camera-scanning merge |
+| `main` | has the merged camera-scanning work, **including the `[hidden]` bug** |
+| `excel-export` branch | export feature + the bug fix + doc updates, all **uncommitted** |
+| Real data | untouched throughout — every check ran against a copy |
+| `mkcert -install` | **not run.** Blocks item 2, which blocks the iPad half of item 3 |
+
+**Next session, in order:**
+1. Mohit runs `mkcert -install` in Terminal.app (needs a password prompt; can't be run from here).
+2. Generate the LAN cert, restart over HTTPS against a DB copy, hand over `rootCA.pem` to AirDrop
+   to the iPad, walk through the profile install and Certificate Trust Settings toggle.
+3. The actual acceptance test: Camera button appears on the iPad and reads a real barcode.
+4. Separately, and not blocked on any of the above: review and commit the `excel-export` branch
+   (export feature + the `[hidden]` fix), then PR and merge to `main`.
 
 ---
 
