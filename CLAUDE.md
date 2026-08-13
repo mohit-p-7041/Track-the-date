@@ -20,6 +20,16 @@ These were considered and settled. Don't "improve" them into something else.
   `app/static/vendor/`.
 - **Product and Batch are separate.** A Product is a barcode. A Batch is one expiry date for
   that barcode. Photos and category live on the Product so they're stored once.
+- **A product is never deleted; a batch entered by mistake is.** Amended 13 Aug, and the
+  distinction is between an outcome and an error. Resolving a batch — `discounted`, `sold`,
+  `pulled` — still never deletes anything, because that is the waste record. But a batch typed
+  in wrong is not waste, it never existed, and keeping it puts fiction in the waste review, so
+  it is really deleted. Products stay whatever happens, including with no dates left: their name,
+  photo and category can be changed, and there is no delete.
+- **A barcode is whatever a scanner produced, not necessarily digits.** Nine real products carry
+  the gun's `]C1…` AIM prefix or a URL from a QR code on the packaging. Validate the *shape* — all
+  digits, or a `]` prefix, or a URL — to keep typed words out. Never "digits only", and never
+  rewrite what was scanned.
 - **PINs are accountability, not security.** 4 digits, LAN-only app. Don't add password
   complexity rules, lockouts, or session hardening. Do keep the audit trail accurate.
 - **No roles.** ~10 staff, one shop. Everyone can do everything, including adding categories and

@@ -220,7 +220,27 @@ renames anything.
 ## After the screens
 
 Every item above is built. What is left is the five-day run-up to the shop using it — see
-SPEC §9, and `docs/ITERATION-1.md` for what to pick up next and in what order.
+SPEC §9, and `docs/ITERATION-2.md` for what to pick up next and in what order.
+
+**The iPad punch list — iteration 3, and the current work.** Five issues came out of the first
+real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in priority order:
+
+1. `[ ]` **Discount sheet shows past-date items.** No lower bound on the range, so 83 rows of
+   backlog print before this week's. Bound it `>= today`.
+2. `[ ]` **The barcode field accepts typed words.** Reject anything that is not a shape a
+   scanner produces — all digits, or a `]` AIM prefix, or a URL. **Not "digits only": nine real
+   products would fail**, including the gun's own `]C1…` codes and QR codes off the packaging.
+   App-level message plus a `CHECK` constraint as the backstop.
+3. `[ ]` **Swipe to delete a batch on the Due screen.** A mis-scan has no undo today. Deletes the
+   batch for real; never the product, even at zero batches.
+4. `[ ]` **Edit toggle on product detail.** Editing controls are always on screen. One Edit
+   toggle covering name, category and photo — **including renaming a product**, which is now a
+   deliberate decision rather than an open question.
+5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
+   with new `edited_by` / `edited_at` columns.
+
+**HTTPS and camera scanning are done and verified on a real iPad** (13 Aug) — see
+`docs/ITERATION-2.md`.
 
 **Real staff names and PINs** — day 2, and the one that cannot slip. Both imported accounts are
 still on the placeholder `1234`, so until this is done the audit trail says `BP TECOMA` for
@@ -230,19 +250,21 @@ everybody, which is the whole point of having PINs.
 longer write. What is left is the shop-floor half, which needs the actual staff list and cannot
 be done from here: **follow `docs/STAFF-SETUP.md` at the laptop.** Roughly twenty minutes.
 
-**HTTPS + iPad certificates** (SPEC §1) — day 2. `start.bat` already switches automatically when
-`certs/` exists; this is mkcert plus about two minutes per iPad, not a code change.
+**HTTPS + iPad certificates** (SPEC §1) — **done on the dev Mac, 13 Aug.** `mkcert -install` run,
+a cert issued for `192.168.1.119`, the root installed and trusted on the iPad, and every screen
+loaded over `https://192.168.1.119:8443`. `start.bat` switched to HTTPS by itself once `certs/`
+existed, exactly as designed — no code change was needed.
 
-*Confirmed, not assumed:* the app does serve over HTTPS with the flags `start.bat` passes (TLS
-1.3, every screen), `show_address.py` takes the arguments it is handed, and the session cookie is
-correctly not `Secure` so http keeps working. The procedure is `docs/HTTPS-SETUP.md`. The mkcert
-run and the iPad profile install need the shop hardware.
+The same two steps have to be repeated on the shop laptop for *its* address, as part of the
+deploy. Note for `docs/HTTPS-SETUP.md`: on current iPadOS the profile is installed from
+**Settings → General → VPN & Device Management**, not the "Profile Downloaded" row older guides
+describe, and serving `rootCA.pem` over plain HTTP to Safari beats AirDrop.
 
-**Camera scanning in the aisles** — *built*. ZXing 0.21.3 vendored into `app/static/vendor/`, no
-CDN, loaded on demand. Verified on the laptop: the vendored decoder reads a real EAN-13 from the
-shop's own data, and a decode fills the barcode field and submits the ordinary lookup. **Not yet
-verified on an iPad** — that needs the certificates, and it is the one thing left to confirm in
-person, along with holding a real barcode in front of a real camera.
+**Camera scanning in the aisles** — *built, and verified on a real iPad on 13 Aug.* ZXing 0.21.3
+vendored into `app/static/vendor/`, no CDN, loaded on demand. Over HTTPS the button appears,
+opens the camera, decodes a real barcode off a real packet, and the date is added through the
+ordinary lookup — one route however the barcode arrived. Nothing about this needed changing once
+the origin was secure; the button's absence beforehand was the gate working.
 
 *Bug found and fixed 12 Aug*, serving the app over plain http on the LAN to see what an iPad
 would get. The camera button is shipped `hidden` and revealed by JavaScript only where
