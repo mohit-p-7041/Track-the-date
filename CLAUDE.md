@@ -28,9 +28,11 @@ These were considered and settled. Don't "improve" them into something else.
   the Excel export first if a snapshot of history is ever wanted — that is what it is for.
 - **A product is never deleted.** Not by staff, not when its last date goes, not ever. Name,
   photo and category can all be changed; there is no delete. Only batches are deletable.
-- **Deleting a batch warns only when the item is still good.** Past its date, it is gone with no
-  confirmation — staff are standing at the shelf holding it. Not yet expired, it asks "this
-  expires in N days, are you sure?" first. No JS `confirm()`; reveal the confirmation inline.
+- **Deleting a batch warns only when the item is still good and still full price.** No
+  confirmation if it is past its date, or if it is already `discounted` — in both cases a
+  decision about that item has already been made and staff are standing at the shelf holding it.
+  Ask only for an `active` batch still in date: "this expires in N days, are you sure?". No JS
+  `confirm()`; reveal the confirmation inline in the row.
 - **A barcode is digits only, 6–18 of them.** Amended 13 Aug. A leading AIM identifier (`]` plus
   two characters) is stripped as transport noise from the gun; everything else must be digits or
   it is refused. Typed words are the thing this exists to stop. The ten legacy rows that fail

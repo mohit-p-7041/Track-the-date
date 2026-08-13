@@ -161,6 +161,73 @@ Assessed against the logic flow, and **it does not break it**, provided:
 Lower priority than item 3: delete-and-rescan already recovers from the mistake, so this buys
 tidiness and a better audit trail rather than a capability that is missing.
 
+### 6. Categories cannot be deleted `[ ]`
+
+Settings can add and rename a category but not remove one. A typo made while scanning is
+therefore permanent in the filter list on every screen.
+
+Build it, and **do not gate it behind a role** — see the decision below. Deleting a category is
+already a safe operation: `products.category_id` is `ON DELETE SET NULL`, so the products fall
+back to uncategorised, which is a normal state the app handles everywhere. Nothing is lost that
+retyping the category does not restore. Say how many products it affects before it happens.
+
+### 7. Products should not be attributed to a person `[ ]`
+
+`products.created_by` exists and is set on 2 of 954 rows. Only batches should carry a person:
+a batch is something somebody did, a product is just a fact about a barcode that the shop sells.
+Drop the column in the same migration as the status change.
+
+`batches.added_by` and `resolved_by` stay exactly as they are — they are the reason PINs exist.
+
+### 8. A photo uploads but does not display `[ ]` — **test-rig only, not a shop bug**
+
+Seen on the iPad on 13 Aug: a photo appeared to upload but rendered broken, while categories
+saved fine.
+
+Diagnosed, and the shop laptop is unaffected. The upload worked perfectly — `jasmeen.jpg`, 46 KB,
+compressed and written, with `image_path` set on the product. It could not be *served* because
+the two halves disagree about where photos live:
+
+- `app/photos.py` `photo_dir()` reads `TTD_PHOTO_DIR`, falling back to `data/photos`
+- `app/main.py:35` mounts `/data/photos` from a **hardcoded** `ROOT / "data" / "photos"`
+
+With `TTD_PHOTO_DIR` set — which the LAN test server does, so a test cannot litter the real photo
+folder — files are written to one directory and served from another. In production the variable
+is unset, both resolve to `data/photos`, and photos work.
+
+Still worth fixing: the mount should honour `photo_dir()` so the two can never disagree. Low
+priority, no effect on Saturday, but it means no automated test can ever catch a broken photo
+URL, which is how this stayed invisible.
+
+---
+
+## Decided: no root, admin or manager account
+
+Asked on 13 Aug, prompted by three things that felt like they needed one: deleting categories,
+resetting a forgotten PIN, and deleting an account.
+
+**Recommendation, and the decision unless overridden: don't build roles.** `CLAUDE.md`'s "no
+roles" stays. Every power that seemed to need a root account has a better answer without one:
+
+| Wanted | Without a root account |
+|---|---|
+| Delete a category | Just allow it. It is recoverable — products become uncategorised and someone retypes the name. Nothing needs protecting |
+| Reset a PIN you know | Already the rule, and the right one: you must enter the current PIN to change it |
+| Reset a **forgotten** PIN | `python scripts/add_user.py "Name" 1234 --reset`, at the laptop. Physical access to the machine is the control, and it is a stronger one than a shared PIN |
+| Delete an account | Already works from Settings, and the last active account refuses |
+
+The argument against a root tier is that it would not do what it appears to. In a shop of ten
+people a manager PIN is shared or written down within a month, and this is a LAN app with
+four-digit PINs where anyone who can reach the laptop can open `data/tecoma.db` directly.
+`CLAUDE.md` is right that PINs are accountability, not security — a root account adds the
+appearance of a control without the substance, and a second class of user to maintain forever.
+
+The forgotten-PIN case Mohit already accepted: that account becomes a ghost, and a new one gets
+made. `add_user.py --reset` means it does not even have to be a ghost.
+
+**If this is overridden later**, the shape wanted was: root can change any account's PIN, delete
+any account, and delete categories. Nothing else. Record it here before building it.
+
 ---
 
 ## Iteration 3 — what to build, in order
@@ -173,8 +240,11 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 | 1 | Sheet date range (item 2) | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
 | 2 | Barcode rule + migration (item 1) | Junk products are permanent; every hour of scanning adds more | 1½ hr |
 | 3 | Statuses + swipe (item 3) | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
-| 4 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
-| 5 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
+| 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
+| 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
+| 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
+| — | Drop `products.created_by` (item 7) | Rides along with item 3's migration, no extra session | — |
+| — | Photo mount path (item 8) | Test-rig only. After Saturday | — |
 
 **That is about six and a half hours against six available, and items 2 and 3 both carry a
 migration against real data.** If Friday runs short, item 5 drops first and item 4 second — both

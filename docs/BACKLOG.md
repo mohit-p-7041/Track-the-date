@@ -241,6 +241,17 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    deliberate decision rather than an open question.
 5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
    with new `edited_by` / `edited_at` columns.
+6. `[ ]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
+   which is normal and recoverable. Say how many products it affects first.
+7. `[ ]` **Drop `products.created_by`.** Only batches carry a person; a product is a fact about a
+   barcode. Rides along with item 3's migration.
+8. `[ ]` **The photo mount ignores `TTD_PHOTO_DIR`.** `app/main.py:35` hardcodes `data/photos`
+   while `photos.py` honours the variable, so uploads and serving can disagree. Production is
+   unaffected — both resolve the same when the variable is unset. After Saturday.
+
+**No root/admin/manager account** — asked and decided 13 Aug, "no roles" stands. Category
+deletion is safe rather than gated, a PIN change needs the current PIN, and a forgotten PIN is
+`scripts/add_user.py "Name" 1234 --reset` at the laptop. Reasoning in `docs/ITERATION-2.md`.
 
 Ideas that aren't scheduled go in `docs/FUTURE-IDEAS.md`, not here.
 
