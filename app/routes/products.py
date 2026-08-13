@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 
 from app import photos
 from app.auth import current_user
-from app.catalogue import categories, resolve_category
+from app.catalogue import categories, clean_name, resolve_category
 from app.db import get_conn
 from app.views import render, setting
 
@@ -139,7 +139,8 @@ def product_detail(
     return _detail_page(request, conn, product_id)
 
 
-def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int, message: str = ""):
+def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int,
+                 message: str = "", editing: bool = False):
     product = conn.execute(
         """SELECT p.*, c.name AS category_name
              FROM products p
@@ -172,38 +173,33 @@ def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int, me
         resolutions=RESOLUTIONS,
         today=dt.date.today().isoformat(),
         message=message,
+        editing=editing,
     )
 
 
-@router.post("/products/{product_id}/category")
-def set_category(
+@router.post("/products/{product_id}/edit")
+def edit_product(
     request: Request,
     product_id: int,
+    name: str = Form(""),
     category: str = Form(""),
+    photo: UploadFile | None = File(None),
     conn: sqlite3.Connection = Depends(get_conn),
     user: dict = Depends(current_user),
 ):
-    """One category per barcode, so this reaches every batch of it at once."""
-    category_id = resolve_category(conn, category, user["id"])
-    conn.execute("UPDATE products SET category_id = ? WHERE id = ?", (category_id, product_id))
-    conn.commit()
-    return RedirectResponse(f"/products/{product_id}", status_code=303)
+    """Everything editable about a product, in one form.
 
+    Replaced the separate category and photo routes on 13 Aug. The screen used
+    to show both pickers permanently, so after saving a category the picker sat
+    there redisplaying the value and read like unfinished work rather than a
+    saved fact. One Edit toggle, one form, one Save.
 
-@router.post("/products/{product_id}/photo")
-def set_photo(
-    request: Request,
-    product_id: int,
-    photo: UploadFile = File(...),
-    conn: sqlite3.Connection = Depends(get_conn),
-    user: dict = Depends(current_user),
-):
-    """Attach a photo to the barcode. Never required, and it backfills.
-
-    The browser has usually shrunk this already (see static/js/photo.js), so
-    what arrives is normally well under a megabyte. Pillow runs regardless —
-    the resize is the guarantee, the browser side is only there to keep four
-    megabytes off the shop WiFi.
+    **Renaming is deliberate**, and this is where iteration 1's open question got
+    settled: staff can rename a product. The imported names stay as they are by
+    default because staff recognise them, nothing renames automatically, and
+    there is no bulk tidy-up — but a name typed wrong at 7am can be corrected.
+    The barcode is not editable: that is the product's identity, and a wrong one
+    is a different product.
     """
     product = conn.execute(
         "SELECT id, barcode, image_path FROM products WHERE id = ?", (product_id,)
@@ -211,27 +207,44 @@ def set_photo(
     if product is None:
         raise HTTPException(status_code=404)
 
-    # Read synchronously: this route resizes an image, and a sync route runs
-    # in the threadpool instead of blocking the event loop while it does.
-    data = photo.file.read()
-    if not data:
-        return RedirectResponse(f"/products/{product_id}", status_code=303)
-    if len(data) > photos.MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="That image is too big")
+    name = clean_name(name)
+    if not name:
+        return _detail_page(request, conn, product_id, editing=True,
+                            message="Give the product a name.")
 
-    try:
-        stored, _size = photos.save(
-            data,
-            product["barcode"],
-            max_px=int(setting(conn, "image_max_px", "800")),
-            quality=int(setting(conn, "image_quality", "72")),
-        )
-    except OSError:
-        # Not an image, or one Pillow cannot read. Say so on the page rather
-        # than showing a stack trace to someone holding an iPad.
-        return _detail_page(request, conn, product_id, message="That file was not an image.")
+    # One category per barcode, so this reaches every batch of it at once.
+    category_id = resolve_category(conn, category, user["id"])
+    conn.execute(
+        "UPDATE products SET name = ?, category_id = ? WHERE id = ?",
+        (name, category_id, product_id),
+    )
 
-    conn.execute("UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id))
+    # Read synchronously: this route resizes an image, and a sync route runs in
+    # the threadpool instead of blocking the event loop while it does.
+    data = photo.file.read() if photo is not None else b""
+    if data:
+        if len(data) > photos.MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="That image is too big")
+        try:
+            stored, _size = photos.save(
+                data,
+                product["barcode"],
+                max_px=int(setting(conn, "image_max_px", "800")),
+                quality=int(setting(conn, "image_quality", "72")),
+            )
+        except OSError:
+            # Not an image, or one Pillow cannot read. Say so on the page rather
+            # than showing a stack trace to somebody holding an iPad.
+            #
+            # The name and category go with it: one form, one save. The rollback
+            # is explicit rather than load-bearing — get_conn closes without
+            # committing, which discards them anyway — but it says so, and it is
+            # what keeps this correct if a commit is ever added above.
+            conn.rollback()
+            return _detail_page(request, conn, product_id, editing=True,
+                                message="That file was not an image.")
+        conn.execute("UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id))
+
     conn.commit()
     return RedirectResponse(f"/products/{product_id}", status_code=303)
 

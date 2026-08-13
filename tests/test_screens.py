@@ -731,9 +731,114 @@ def test_an_unknown_resolution_is_refused(client, sample, status):
     assert response.status_code == 400
 
 
+def test_the_product_screen_hides_its_editing_controls(client, sample):
+    """Punch list item 4. The pickers used to sit on screen permanently, so a
+    saved category read like unfinished work rather than a saved fact."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert '<details class="edit"' in body
+    assert "<summary" in body
+    # Closed by default: <details> without `open` is collapsed.
+    assert '<details class="edit" >' in body or '<details class="edit">' in body
+    assert 'class="edit" open' not in body
+
+
+def test_one_form_covers_name_category_and_photo(client, sample):
+    """One toggle, one form, one Save — not three pickers with three Saves."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    form = body.split('class="edit-form"')[1].split("</form>")[0]
+    for field in ('id="name"', 'id="category"', 'id="photo"'):
+        assert field in form, field
+    assert form.count('type="submit"') == 1
+    # The barcode is identity, not an editable field.
+    assert 'name="barcode"' not in form
+
+
+def test_a_product_can_be_renamed(client, sample, db):
+    """Settles the question iteration 1 left open: staff can rename a product.
+
+    A name typed wrong at 7am on a Saturday should be correctable. Nothing
+    renames automatically and there is no bulk tidy-up.
+    """
+    product = sample["products"]["monster"]
+    response = client.post(f"/products/{product}/edit",
+                           data={"name": "Monster Ultra Zero 500mL", "category": ""},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert db.execute("SELECT name FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == "Monster Ultra Zero 500mL"
+
+
+def test_renaming_keeps_every_batch(client, sample, db):
+    """The product is one row, so a rename carries its whole history with it."""
+    product = sample["products"]["monster"]
+    before = db.execute("SELECT COUNT(*) FROM batches WHERE product_id = ?",
+                        (product,)).fetchone()[0]
+    client.post(f"/products/{product}/edit", data={"name": "Renamed Thing"})
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE product_id = ?",
+                      (product,)).fetchone()[0] == before
+
+
+def test_a_blank_name_is_refused_and_reopens_the_panel(client, sample, db):
+    """Never silently keep the old name — and never close on what was typed."""
+    product = sample["products"]["monster"]
+    response = client.post(f"/products/{product}/edit", data={"name": "   "})
+    assert response.status_code == 200
+    assert "Give the product a name" in response.text
+    assert 'class="edit" open' in response.text
+    assert db.execute("SELECT name FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == MONSTER_NAME
+
+
+def test_a_messy_imported_name_is_left_alone_by_default(client, sample, db):
+    """Trailing whitespace and curly apostrophes survive an unrelated edit.
+
+    Staff recognise these names as they are. Editing the category must not
+    quietly tidy the name — see docs/DATA-NOTES.md.
+    """
+    product = sample["products"]["shouty"]
+    original = db.execute("SELECT name FROM products WHERE id = ?",
+                          (product,)).fetchone()[0]
+    assert original == "C/RIDGE WATER 1L  "        # the real export has this
+
+    body = client.get(f"/products/{product}").text
+    assert 'value="C/RIDGE WATER 1L  "' in body, "the field must offer it verbatim"
+
+
+def test_the_edit_panel_reopens_on_a_bad_photo(client, sample):
+    """A rejected save must not close the panel and swallow the typing."""
+    response = _edit(
+        client, sample["products"]["monster"],
+        files={"photo": ("notes.txt", b"not a photograph", "text/plain")},
+    )
+    assert "not an image" in response.text
+    assert 'class="edit" open' in response.text
+
+
+def test_a_bad_photo_does_not_save_the_name_either(client, sample, db):
+    """One form, one save: if it is refused, none of it lands."""
+    product = sample["products"]["monster"]
+    _edit(client, product, name="Should Not Persist",
+          files={"photo": ("notes.txt", b"not a photograph", "text/plain")})
+    assert db.execute("SELECT name FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == MONSTER_NAME
+
+
+def test_the_photo_script_sends_the_whole_form(client):
+    """It used to post a FormData holding only the photo.
+
+    That was right when the photo had a route of its own. Now name, category and
+    photo save together, so sending just the image would discard a rename typed
+    in the same panel — and the shrink path is the one an iPad always takes.
+    """
+    js = client.get("/static/js/photo.js").text
+    assert "new FormData(form)" in js
+    assert "data.set('photo'" in js
+    assert 'button[type="submit"]' in js, "a bare button selector grabs Camera"
+
+
 def test_category_can_be_set_from_the_product_screen(client, sample, db):
-    client.post(f"/products/{sample['products']['shouty']}/category",
-                data={"category": "Water"})
+    client.post(f"/products/{sample['products']['shouty']}/edit",
+                data={"name": "C/RIDGE WATER 1L", "category": "Water"})
     assert db.execute(
         """SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
             WHERE p.id = ?""",
@@ -742,7 +847,8 @@ def test_category_can_be_set_from_the_product_screen(client, sample, db):
 
 
 def test_clearing_the_category_is_allowed(client, sample, db):
-    client.post(f"/products/{sample['products']['monster']}/category", data={"category": ""})
+    client.post(f"/products/{sample['products']['monster']}/edit",
+                data={"name": MONSTER_NAME, "category": ""})
     assert db.execute(
         "SELECT category_id FROM products WHERE id = ?", (sample["products"]["monster"],)
     ).fetchone()[0] is None
@@ -770,12 +876,24 @@ def _photo_bytes(width=2000, height=1500, orientation=None) -> bytes:
     return buffer.getvalue()
 
 
+# Every product edit goes through one form now, and `name` is required — so the
+# photo tests carry the existing name along rather than each asserting a rename.
+MONSTER_NAME = "Monster Ultra Zero 500ml"
+
+
+def _edit(client, product_id, name=MONSTER_NAME, **kwargs):
+    """POST the combined edit form. kwargs go straight through (files=, data=)."""
+    data = {"name": name}
+    data.update(kwargs.pop("data", {}))
+    return client.post(f"/products/{product_id}/edit", data=data, **kwargs)
+
+
 def test_uploading_a_photo_attaches_it_to_the_product(client, sample, db, photo_dir):
-    response = client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    response = _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
         follow_redirects=False,
-    )
+        )
     assert response.status_code == 303
 
     stored = db.execute(
@@ -788,8 +906,8 @@ def test_uploading_a_photo_attaches_it_to_the_product(client, sample, db, photo_
 def test_a_photo_is_resized_and_stripped(client, sample, photo_dir):
     from PIL import Image
 
-    client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(orientation=6), "image/jpeg")},
     )
     saved = Image.open(photo_dir / "9300601234567.jpg")
@@ -804,8 +922,8 @@ def test_a_photo_is_resized_and_stripped(client, sample, photo_dir):
 def test_a_photo_appears_on_batches_recorded_months_ago(client, sample):
     """It hangs off the barcode, so it backfills everything already recorded."""
     assert "thumb-empty" in client.get("/").text
-    client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
     )
     body = client.get("/").text
@@ -814,8 +932,8 @@ def test_a_photo_appears_on_batches_recorded_months_ago(client, sample):
 
 def test_replacing_a_photo_leaves_no_orphan(client, sample, photo_dir):
     for _ in range(3):
-        client.post(
-            f"/products/{sample['products']['monster']}/photo",
+        _edit(
+            client, sample["products"]["monster"],
             files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
         )
     files = [p for p in photo_dir.iterdir() if p.is_file()]
@@ -824,8 +942,8 @@ def test_replacing_a_photo_leaves_no_orphan(client, sample, photo_dir):
 
 def test_the_photo_url_changes_when_the_photo_does(client, sample):
     """Same filename every time, so without a stamp an iPad shows a stale one."""
-    client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
     )
     body = client.get(f"/products/{sample['products']['monster']}").text
@@ -834,8 +952,8 @@ def test_the_photo_url_changes_when_the_photo_does(client, sample):
 
 
 def test_a_file_that_is_not_an_image_is_refused_politely(client, sample, db):
-    response = client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    response = _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("notes.txt", b"this is not a photograph", "text/plain")},
     )
     assert response.status_code == 200

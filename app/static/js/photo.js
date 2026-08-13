@@ -13,7 +13,10 @@
   if (!form) return;
 
   var input = document.getElementById('photo');
-  var button = form.querySelector('button');
+  /* type=submit specifically. The form now also holds the Camera button, and it
+     comes first — a bare querySelector('button') disables that one and leaves
+     Save looking untouched while the upload runs. */
+  var button = form.querySelector('button[type="submit"]');
   var canUse = window.FileReader && window.URL &&
                HTMLCanvasElement.prototype.toBlob;
   if (!input || !canUse) return;
@@ -49,8 +52,13 @@
   function upload(blob) {
     button.disabled = true;
     button.textContent = 'Saving…';
-    var data = new FormData();
-    data.append('photo', blob, 'photo.jpg');
+    /* The whole form, with the shrunk image swapped in for the chosen file.
+       This used to send a FormData containing only the photo, which was right
+       when the photo had a route of its own — since 13 Aug name, category and
+       photo save together, and posting just the image would silently discard a
+       rename somebody had typed in the same panel. */
+    var data = new FormData(form);
+    data.set('photo', blob, 'photo.jpg');
     return fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin' })
       .then(function () { window.location.href = form.dataset.done; });
   }

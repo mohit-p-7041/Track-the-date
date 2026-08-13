@@ -189,7 +189,7 @@ Blast radius, checked: `app/routes/products.py`, `app/schema.sql`, `app/template
 `scripts/import_beep.py`, and four files under `tests/`. Not a small change — see the schedule
 note at the end.
 
-### 4. Product detail should have an edit toggle `[ ]`
+### 4. Product detail should have an edit toggle `[x]` — **done 13 Aug**
 
 The product screen always shows its editing controls — a category picker with a Save, a photo
 picker with a Save — whether or not anyone is editing. After saving a category the picker stays
@@ -203,6 +203,25 @@ as "not built — wants a deliberate decision, not a text box that appeared by i
 that decision, made by the shop: **staff can rename a product.** The messy imported names stay
 as they are by default because staff recognise them; nothing renames automatically and there is
 no bulk tidy-up. But a name typed wrong at 7am on a Saturday can be corrected.
+
+**Built 13 Aug.** One route, `POST /products/{id}/edit`, replacing `/category` and `/photo` — the
+punch list asked for one form, and two routes behind it would have been two ways to do the same
+thing. Consequences worth recording:
+
+- **`photo.js` had to change with it.** It built a `FormData` containing only the photo, which was
+  right while the photo had its own route; against a combined form it would have silently
+  discarded a rename typed in the same panel. It now posts the whole form with the shrunk image
+  swapped in. Its `querySelector('button')` also had to become `button[type="submit"]`, because
+  the Camera button now comes first in the form and was getting the "Saving…" state instead.
+- **A rejected save reopens the panel** (`<details open>`) rather than closing on what somebody
+  typed, and saves none of it — the name is not committed before the photo is attempted. The test
+  for that only fails if a `commit()` is added above the photo handling, which is the actual
+  mistake; the `rollback()` is explicit rather than load-bearing, since the connection closes
+  without committing anyway.
+- **A blank name is refused**, not silently replaced with the old one. Renaming is meant to be
+  deliberate in both directions.
+- The barcode is deliberately not editable. It is the product's identity; a wrong one is a
+  different product, and the barcode rule already governs how one gets created.
 
 ### 5. Edit a batch's expiry date `[ ]`
 
@@ -331,7 +350,7 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 | 2 | ~~Barcode rule + migration (item 1)~~ **done** | Junk products are permanent; every hour of scanning adds more | 1½ hr |
 | 3 | ~~Statuses + swipe (item 3)~~ **done** | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
 | 4 | ~~Delete categories (item 6)~~ **done** | Small, and a typo in the filter list is permanent today | 30 min |
-| 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
+| 5 | ~~Edit toggle + rename (item 4)~~ **done** | Clutter on the busiest screen after Scan | 1 hr |
 | 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
 | — | ~~Drop `products.created_by` (item 7)~~ **done** | Rode along with item 3's migration as planned | — |
 | — | Photo mount path (item 8) | Test-rig only. After Saturday | — |

@@ -171,9 +171,10 @@ real data the query returns 23 products, the twenty-odd properly spelled ones fi
 The list shows the 100 soonest by default with a link to the rest: 952 rows is 477 KB of HTML,
 which is fine on the laptop and slow on an old iPad. Both render in under 20 ms server-side.
 
-**Renaming a product is not built.** The names are ugly on purpose — staff recognise them — and
-"tidy the names" is exactly the change CLAUDE.md warns against, so it wants a deliberate decision
-rather than a text box that appeared by itself.
+**Renaming a product is built** — 13 Aug, punch list item 4. The names are ugly on purpose and
+nothing tidies them automatically: no bulk rename, no normalisation on save, and the field offers
+the stored name verbatim, trailing spaces and curly apostrophe included. What changed is that a
+name typed wrong at 7am can be corrected, which is a different thing from tidying the import.
 
 ## 7. Weekly discount sheet `[x]`
 
@@ -257,9 +258,11 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
      **The gesture itself still wants a real iPad** — touch events cannot be driven from here, and
      the direction pairing is held by a source assertion rather than by running the code, because a
      JS test runner would mean npm and a build step.
-4. `[ ]` **Edit toggle on product detail.** Editing controls are always on screen. One Edit
-   toggle covering name, category and photo — **including renaming a product**, which is now a
-   deliberate decision rather than an open question.
+4. `[x]` **Edit toggle on product detail.** One Edit toggle covering name, category and photo,
+   **including renaming a product** — the decision iteration 1 left open, now settled. Done
+   13 Aug. `POST /products/{id}/edit` replaced the separate `/category` and `/photo` routes, so
+   there is one form and one Save; a blank name is refused rather than silently kept, and a
+   rejected photo saves none of it.
 5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
    with new `edited_by` / `edited_at` columns.
 6. `[x]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,

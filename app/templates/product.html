@@ -19,40 +19,56 @@
       </span>
     </div>
 
-    <label class="label" for="category">Category <span class="hint">optional</span></label>
-    <form method="post" action="/products/{{ product.id }}/category" class="row-form">
-      <input class="field" id="category" name="category" list="category-list"
-             value="{{ product.category_name or '' }}" autocomplete="off"
-             placeholder="Type or pick">
-      <datalist id="category-list">
-        {% for c in categories %}<option value="{{ c.name }}">{% endfor %}
-      </datalist>
-      <button class="btn btn-quiet" type="submit">Save</button>
-    </form>
+    {# The screen shows the product. Everything editable about it is behind one
+       toggle, in one form, with one Save — the pickers used to sit here
+       permanently, so a saved category read like unfinished work.
 
-    {# Optional, and it backfills: a photo added now shows on every batch of
-       this barcode, including ones recorded months ago. #}
-    <label class="label" for="photo">
-      Photo <span class="hint">{% if product.image_path %}replaces the current one{% else %}optional{% endif %}</span>
-    </label>
-    <form class="row-form" id="photo-form" method="post"
-          action="/products/{{ product.id }}/photo" enctype="multipart/form-data"
-          data-done="/products/{{ product.id }}">
-      <input class="field" type="file" id="photo" name="photo" accept="image/*">
-      <button class="btn btn-quiet" type="submit">Save</button>
-      {# Shown by photo.js only where a camera can actually be opened: the
-         laptop on localhost, or an iPad once the certificates are in. On an
-         iPad the file button already offers Take Photo. #}
-      <button class="btn btn-quiet" type="button" id="camera" hidden>Camera</button>
-    </form>
+       <details open> when a save was rejected, so the panel does not close on
+       somebody and swallow what they typed. The category is optional and the
+       photo backfills: adding one now shows it on every batch of this barcode,
+       including ones recorded months ago. The barcode is not here, because it is
+       the product's identity — a wrong one is a different product. #}
+    <details class="edit" {% if editing %}open{% endif %}>
+      <summary class="btn btn-quiet">Edit</summary>
 
-    <div id="camera-panel" hidden>
-      <video id="camera-view" class="camera-view" playsinline muted></video>
-      <div class="row-form">
-        <button class="btn" type="button" id="camera-take">Take photo</button>
-        <button class="btn btn-quiet" type="button" id="camera-cancel">Cancel</button>
-      </div>
-    </div>
+      <form class="edit-form" id="photo-form" method="post"
+            action="/products/{{ product.id }}/edit" enctype="multipart/form-data"
+            data-done="/products/{{ product.id }}">
+
+        <label class="label" for="name">Name</label>
+        <input class="field" id="name" name="name" value="{{ product.name }}"
+               autocomplete="off" required>
+
+        <label class="label" for="category">Category <span class="hint">optional</span></label>
+        <input class="field" id="category" name="category" list="category-list"
+               value="{{ product.category_name or '' }}" autocomplete="off"
+               placeholder="Type or pick">
+        <datalist id="category-list">
+          {% for c in categories %}<option value="{{ c.name }}">{% endfor %}
+        </datalist>
+
+        <label class="label" for="photo">
+          Photo <span class="hint">{% if product.image_path %}replaces the current one{% else %}optional{% endif %}</span>
+        </label>
+        <div class="row-form">
+          <input class="field" type="file" id="photo" name="photo" accept="image/*">
+          {# Shown by photo.js only where a camera can actually be opened: the
+             laptop on localhost, or an iPad once the certificates are in. On an
+             iPad the file button already offers Take Photo. #}
+          <button class="btn btn-quiet" type="button" id="camera" hidden>Camera</button>
+        </div>
+
+        <div id="camera-panel" hidden>
+          <video id="camera-view" class="camera-view" playsinline muted></video>
+          <div class="row-form">
+            <button class="btn" type="button" id="camera-take">Take photo</button>
+            <button class="btn btn-quiet" type="button" id="camera-cancel">Cancel</button>
+          </div>
+        </div>
+
+        <button class="btn btn-wide" type="submit">Save</button>
+      </form>
+    </details>
 
     <p class="note">
       <a class="btn btn-quiet" href="/scan?barcode={{ product.barcode }}">Add another date</a>

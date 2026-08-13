@@ -210,7 +210,7 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 223 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 232 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
