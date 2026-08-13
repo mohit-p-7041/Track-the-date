@@ -30,18 +30,22 @@ from scripts.init_db import DB_PATH, connect  # noqa: E402
 # misfire — and the importer now refuses them, taking 13 rows with them.
 # 952 - 8 = 944 products, 2340 - 13 = 2327 batches.
 #
-# Reproducing these needs the import date pinned:
+# Revised again the same day with the status change: the importer now skips rows
+# already expired on the import date, rather than bringing them in as 'pulled'.
+# That status no longer exists, and importing 581 long-gone items as 'active'
+# would drop them onto the Due screen. 2327 - 581 = 1746 batches.
+#
+# Products are unaffected — a product is created for every valid barcode even if
+# every one of its dates was expired, because a product is never deleted.
+#
+# Reproducing these needs the import date pinned, or the skipped count moves
+# with the calendar:
 #
 #     python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx \
 #         --today 2026-08-10
-#
-# without which PRE_EXPIRED drifts every day, because it counts what was
-# already expired *when the import ran* — 581 as at the export's own date, 608
-# if imported on 13 Aug. That was true before this change too; the number was
-# simply never reproduced on a later day.
 EXPECTED_PRODUCTS = 944
-EXPECTED_BATCHES = 2327
-EXPECTED_PRE_EXPIRED = 581
+EXPECTED_BATCHES = 1746
+EXPECTED_IMPORT_DATE = "2026-08-10"
 
 results: list[tuple[bool, str, str]] = []
 
@@ -104,9 +108,19 @@ def main() -> int:
           "All expiry dates are ISO YYYY-MM-DD",
           "guards against a US-format date sneaking in")
 
-    check(q("SELECT COUNT(*) FROM batches WHERE status NOT IN "
-            "('active','discounted','pulled','sold')") == 0,
-          "All batch statuses are valid")
+    # Two statuses, not four. Amended 13 Aug: anything else that happens to a
+    # batch is a deletion, so 'pulled' and 'sold' are no longer valid values.
+    bad_status = q("SELECT COUNT(*) FROM batches "
+                   "WHERE status NOT IN ('active','discounted')")
+    check(bad_status == 0,
+          "Batch status is active or discounted",
+          f"{bad_status} row(s) still pulled/sold — run scripts/migrate_statuses.py"
+          if bad_status else "")
+
+    check(q("SELECT COUNT(*) FROM pragma_table_info('products') "
+            "WHERE name = 'created_by'") == 0,
+          "Products are not attributed to a person",
+          "products.created_by is still there — run scripts/migrate_statuses.py")
 
     # ------------------------------------------------------- locked decisions
 
@@ -149,12 +163,16 @@ def main() -> int:
               f"Product count is {EXPECTED_PRODUCTS}")
         check(q("SELECT COUNT(*) FROM batches") == EXPECTED_BATCHES,
               f"Batch count is {EXPECTED_BATCHES}")
-        check(q("SELECT COUNT(*) FROM batches WHERE note LIKE '%not verified%'")
-              == EXPECTED_PRE_EXPIRED,
-              f"{EXPECTED_PRE_EXPIRED} pre-migration expired batches are noted")
-        check(q("SELECT COUNT(*) FROM batches WHERE status = 'pulled' "
-                "AND resolved_by IS NOT NULL") == 0,
-              "No name is attached to unverified pre-migration rows")
+        # Nothing already expired came across, so nothing needs a note saying
+        # a migration rather than a person put it there.
+        stale = q("SELECT COUNT(*) FROM batches WHERE expiry_date < ?",
+                  EXPECTED_IMPORT_DATE)
+        check(stale == 0,
+              f"No batch expired before {EXPECTED_IMPORT_DATE} was imported",
+              f"{stale} pre-expired row(s) came across" if stale else "")
+        check(q("SELECT COUNT(*) FROM batches WHERE status != 'active'") == 0,
+              "Every imported batch is active",
+              "the importer never resolves anything — a person does")
 
     # ---------------------------------------------------------------- output
 

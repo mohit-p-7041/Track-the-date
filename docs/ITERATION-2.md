@@ -52,7 +52,6 @@ actually are settled it the other way:
 |---|---|
 | 5 of the 9 | **already exist a second time under their proper numeric barcode** — Bundaberg ginger beer, bundaberg peach, Cadbury Marvellous Creations, sam's fruit lunch, golden gay time. Someone scanned the marketing QR instead of the barcode and created a duplicate product |
 | 4 of the 9 | have no numeric twin yet — magnum almond, In A Biscuit, Kit Kat Neapolitan 42g, Bundaberg traditional lemonade |
-
 | plus 1 numeric | `1930083008300830083008300830083008300830` — 40 digits, `1930083` repeating. A gun misfire |
 
 *Checked against the data on 13 Aug: the count of about five is right, two of the attributions are
@@ -132,7 +131,7 @@ that they are not two definitions of the same thing:
 One definition of "due" survives; the sheet is a narrower question asked of it. Cheapest fix on
 this list and the most visible on Saturday.
 
-### 3. Swipe to act on a batch, and drop two of the four statuses `[ ]`
+### 3. Swipe to act on a batch, and drop two of the four statuses `[~]` — **statuses done 13 Aug**
 
 The biggest change on the list, and the one that touches the most files. Two parts.
 
@@ -239,9 +238,11 @@ already a safe operation: `products.category_id` is `ON DELETE SET NULL`, so the
 back to uncategorised, which is a normal state the app handles everywhere. Nothing is lost that
 retyping the category does not restore. Say how many products it affects before it happens.
 
-### 7. Products should not be attributed to a person `[ ]`
+### 7. Products should not be attributed to a person `[x]` — **done 13 Aug**
 
-`products.created_by` exists and is set on 2 of 954 rows. Only batches should carry a person:
+`products.created_by` exists and is set on **0** rows — not 2 of 954, which is what this item
+recorded. Checked against the pre-migration backup, so nothing was lost in the rebuild; the count
+was simply wrong when written. (954 was also wrong: there were 952 products.) Only batches should carry a person:
 a batch is something somebody did, a product is just a fact about a barcode that the shop sells.
 Drop the column in the same migration as the status change.
 
@@ -307,11 +308,11 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 |---|---|---|---|
 | 1 | ~~Sheet date range (item 2)~~ **done** | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
 | 2 | ~~Barcode rule + migration (item 1)~~ **done** | Junk products are permanent; every hour of scanning adds more | 1½ hr |
-| 3 | Statuses + swipe (item 3) | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
+| 3 | Statuses + swipe (item 3) — **statuses done**, swipe outstanding | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
 | 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
 | 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
 | 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
-| — | Drop `products.created_by` (item 7) | Rides along with item 3's migration, no extra session | — |
+| — | ~~Drop `products.created_by` (item 7)~~ **done** | Rode along with item 3's migration as planned | — |
 | — | Photo mount path (item 8) | Test-rig only. After Saturday | — |
 
 **That is about six and a half hours against six available, and items 2 and 3 both carry a

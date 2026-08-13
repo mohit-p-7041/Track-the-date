@@ -123,9 +123,8 @@ def add(
 
     if product is None:
         product_id = conn.execute(
-            "INSERT INTO products (barcode, name, category_id, created_by) "
-            "VALUES (?, ?, ?, ?)",
-            (barcode, name, category_id, user["id"]),
+            "INSERT INTO products (barcode, name, category_id) VALUES (?, ?, ?)",
+            (barcode, name, category_id),
         ).lastrowid
     else:
         product_id = product["id"]

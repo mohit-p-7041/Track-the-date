@@ -77,6 +77,14 @@ templates.env.filters["au_date"] = au_date
 templates.env.filters["au_when"] = au_when
 templates.env.globals["photo_url"] = photo_url
 
+# The delete-confirmation rule. Both the Due screen and the product screen ask
+# it, so it comes from app/catalogue.py rather than being spelt out in two
+# templates that could drift apart.
+from app.catalogue import days_until, needs_confirmation  # noqa: E402
+
+templates.env.globals["needs_confirmation"] = needs_confirmation
+templates.env.globals["days_until"] = days_until
+
 
 def setting(conn: sqlite3.Connection, key: str, default: str) -> str:
     row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()

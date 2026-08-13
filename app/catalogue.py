@@ -141,6 +141,37 @@ def resolve_category(conn: sqlite3.Connection, name: str, user_id: int) -> int |
         return row["id"] if row else None
 
 
+def _as_date(value) -> dt.date | None:
+    """A date from either ISO text or a date. Templates hand over both."""
+    if isinstance(value, dt.date):
+        return value
+    try:
+        return dt.date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def days_until(expiry, today=None) -> int | None:
+    """Whole days from today to the expiry date. Negative once it is past."""
+    expiry_date, today_date = _as_date(expiry), _as_date(today) or dt.date.today()
+    return None if expiry_date is None else (expiry_date - today_date).days
+
+
+def needs_confirmation(status: str, expiry, today=None) -> bool:
+    """Whether deleting this batch should ask first.
+
+    Only when the item is still good *and* still full price. Past its date, or
+    already discounted, and a decision about that item has been made — staff are
+    standing at the shelf holding it, and asking again is friction on the most
+    common case there is.
+
+    Two screens ask this question, so it lives here rather than in either of
+    them, and it is registered as a template global in app/views.py.
+    """
+    remaining = days_until(expiry, today)
+    return status == "active" and remaining is not None and remaining >= 0
+
+
 def live_batch(conn: sqlite3.Connection, product_id: int, expiry: str) -> sqlite3.Row | None:
     """The batch that makes this a duplicate, if there is one.
 

@@ -21,7 +21,9 @@ These were considered and settled. Don't "improve" them into something else.
 - **Product and Batch are separate.** A Product is a barcode. A Batch is one expiry date for
   that barcode. Photos and category live on the Product so they're stored once.
 - **A batch has two endings: discounted, or deleted.** Amended 13 Aug, replacing the four
-  statuses. `status` is `active` or `discounted` — nothing else. Anything else that happens to a
+  statuses, and **built** the same day — `scripts/migrate_statuses.py`, 2327→1746 batches, with
+  `products.created_by` dropped in the same rebuild. The importer skips already-expired rows for
+  the same reason, so a fresh import and a migrated database agree. `status` is `active` or `discounted` — nothing else. Anything else that happens to a
   batch is a deletion: the row goes, for real. `pulled` and `sold` are gone, because the shop
   never used either (1757 `active`, 583 `pulled` from the import, zero `sold`, zero `discounted`)
   and because a record of every item ever removed grows forever on a laptop nobody prunes. Take
@@ -100,6 +102,7 @@ scripts/
   init_db.py      create the database; also holds connect()
   import_beep.py  load the old app's Excel export
   migrate_barcodes.py  one-off: put the barcode CHECK on an existing database
+  migrate_statuses.py  one-off: four statuses to two, and drop products.created_by
   check_db.py     sanity checks — run these
   backup.py       snapshot db + photos, keep last 7
   export_xlsx.py  every batch to one Excel sheet; the settings button calls this
@@ -127,6 +130,8 @@ python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10
 python scripts/migrate_barcodes.py --db /tmp/copy.db --dry-run  # barcode rule, on a copy first
 python scripts/migrate_barcodes.py                           # then for real (asks first)
+python scripts/migrate_statuses.py --db /tmp/copy.db --dry-run  # two statuses, on a copy first
+python scripts/migrate_statuses.py                           # then for real (asks first)
 python scripts/check_db.py                                   # run before committing
 python scripts/check_db.py --expect-import                   # also assert the import numbers
 python scripts/backup.py                                     # snapshot db + photos
@@ -175,7 +180,7 @@ explicitly and update it deliberately.
 ## The data
 
 The beep export at `data/imports/beep_2026-08-10.xlsx` is real production data: 2343 rows,
-2 staff accounts. It imports to **944 products and 2327 batches** — see `docs/DATA-NOTES.md`.
+2 staff accounts. It imports to **944 products and 1746 batches** — see `docs/DATA-NOTES.md`.
 Use it for realistic testing rather than inventing fixtures.
 
 Pin the date to reproduce those numbers, or the expired/live split moves with the calendar:
@@ -183,12 +188,18 @@ Pin the date to reproduce those numbers, or the expired/live split moves with th
 Without the pin the counts still import fine, but `check_db.py --expect-import` will disagree on
 the pre-expired total (581 as at the export's date, 608 by 13 Aug).
 
-Was 952 products and 2340 batches before 13 Aug; the barcode rule refuses 8 barcodes, and with
-them 13 rows.
+Was 952 products and 2340 batches before 13 Aug. Two changes that day: the barcode rule refuses
+8 barcodes and 13 rows with them, and the status change means rows already expired on the import
+date are **skipped rather than imported** — 581 of them. 952 − 8 = 944 products;
+2340 − 13 − 581 = 1746 batches.
 
 Every product imports with `category_id` NULL — the old app only ever had one category ('All'),
-so there was nothing to migrate. 581 batches were already expired at import and carry a note
-saying so; leave them alone, staff clear that backlog as they rescan.
+so there was nothing to migrate. A product is created for every valid barcode even when all of
+its dates were expired, because a product is never deleted; some products therefore have zero
+batches, which is a normal state.
+
+The 27 `active` batches already past their date are **not** touched by either migration. They are
+real stock and the backlog staff clear on Saturday.
 
 Product names are messy in ways that matter for search: inconsistent case
 (`C/RIDGE WATER 1L` vs `Cool Ridge Water 600ml`), trailing whitespace, curly apostrophes, one
@@ -199,7 +210,7 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 194 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 213 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
@@ -209,7 +220,7 @@ too, so it's safe to run on the shop laptop.
   "this cannot be done": the duplicate guard raises, categories collide case-insensitively,
   `au_date` never emits US format or a leading zero.
 
-**`python scripts/check_db.py`** — 13 structural checks against the real database, or 17 with
+**`python scripts/check_db.py`** — 14 structural checks against the real database, or 18 with
 `--expect-import`, which also asserts the original migration numbers.
 
 ### Adding tests

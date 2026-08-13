@@ -100,17 +100,21 @@ def sample(db: sqlite3.Connection) -> dict:
     ids = {}
     for key, (barcode, name, category_id) in products.items():
         ids[key] = db.execute(
-            "INSERT INTO products (barcode, name, category_id, created_by) "
-            "VALUES (?, ?, ?, ?)",
-            (barcode, name, category_id, user_id),
+            "INSERT INTO products (barcode, name, category_id) VALUES (?, ?, ?)",
+            (barcode, name, category_id),
         ).lastrowid
 
+    # Two statuses only. `resolved` was 'pulled' until 13 Aug, when the four
+    # statuses became two — a batch is active or discounted, and anything else
+    # that happens to it is a real deletion, so there is no status left that
+    # means "dealt with and hidden". It is `discounted` now: still on the shelf,
+    # still shown, with a sticker on it.
     batches = {
         "overdue": (ids["monster"], days(-4), "active"),
         "due_soon": (ids["shouty"], days(2), "active"),
         "due_edge": (ids["curly"], days(7), "active"),      # exactly on the window
         "outside": (ids["monster"], days(30), "active"),    # beyond the window
-        "resolved": (ids["curly"], days(1), "pulled"),      # dealt with, must not show
+        "discounted": (ids["curly"], days(1), "discounted"),
     }
     batch_ids = {}
     for key, (product_id, expiry, status) in batches.items():

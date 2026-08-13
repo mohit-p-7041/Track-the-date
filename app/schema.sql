@@ -60,8 +60,10 @@ CREATE TABLE IF NOT EXISTS products (
     name        TEXT    NOT NULL,
     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     image_path  TEXT,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    -- No created_by. Dropped 13 Aug: a batch is something somebody did and
+    -- carries added_by / resolved_by, but a product is just a fact about a
+    -- barcode the shop sells. The column held nothing anyway — 0 rows set.
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_name     ON products(name);
@@ -81,8 +83,14 @@ CREATE TABLE IF NOT EXISTS batches (
     expiry_date TEXT    NOT NULL,                        -- ISO 'YYYY-MM-DD'
     quantity    INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),  -- reserved, always 1
     note        TEXT,
+    -- Two endings, not four. Amended 13 Aug: a batch is 'active' or it is
+    -- 'discounted', and anything else that happens to it is a real deletion.
+    -- 'pulled' and 'sold' are gone because the shop never used either — 1757
+    -- active and 583 pulled arrived from the import, zero sold, zero
+    -- discounted — and because a record of every item ever removed only grows,
+    -- on a laptop nobody prunes. The Excel export is how history gets kept.
     status      TEXT    NOT NULL DEFAULT 'active'
-                        CHECK (status IN ('active', 'discounted', 'pulled', 'sold')),
+                        CHECK (status IN ('active', 'discounted')),
     added_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
     added_at    TEXT    NOT NULL DEFAULT (datetime('now')),
     resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -94,7 +102,12 @@ CREATE TABLE IF NOT EXISTS batches (
 -- should catch this before insert and tell the person it is already tracked
 -- and when it expires — there are no quantities to add to. This index is the
 -- backstop so it can never happen by another route.
--- Resolved rows (pulled/sold) are excluded so history can repeat a date.
+--
+-- The WHERE clause is historical: it existed to exclude resolved rows so a
+-- date could be reused. With only two live statuses left it now matches every
+-- row, and that is correct — a batch that ends is deleted, so its date is free
+-- again immediately with nothing to exclude. Left partial rather than rebuilt
+-- because the two are equivalent here and the clause documents the intent.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_unique_live
     ON batches(product_id, expiry_date)
     WHERE status IN ('active', 'discounted');

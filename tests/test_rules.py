@@ -50,12 +50,26 @@ def test_discounted_still_counts_as_live(db, sample):
                    (product, date))
 
 
-def test_a_date_can_repeat_once_resolved(db, sample):
-    """Stock cleared in March can legitimately recur in September."""
+def test_a_date_can_repeat_once_the_batch_is_deleted(db, sample):
+    """Stock cleared in March can legitimately recur in September.
+
+    Rewritten 13 Aug. This used to park a 'pulled' row on the date and prove the
+    partial index let the date be reused. There is no resolved-but-present status
+    any more, so the way a date comes free is deletion — and a deleted row is
+    simply not there, which is why the index can stay partial and still be right.
+    """
     product = sample["products"]["monster"]
     date = days(62)
-    db.execute("INSERT INTO batches (product_id, expiry_date, status) VALUES (?, ?, ?)",
-               (product, date, "pulled"))
+    first = db.execute(
+        "INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)", (product, date)
+    ).lastrowid
+
+    # Still live, so the date is taken and the guard says so.
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)",
+                   (product, date))
+
+    db.execute("DELETE FROM batches WHERE id = ?", (first,))
     db.execute("INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)",
                (product, date))  # must not raise
 
@@ -342,10 +356,73 @@ def test_barcodes_are_unique(db, sample):
                    ("9300601234567", "A different product, same barcode"))
 
 
-def test_batch_status_is_constrained(db, sample):
+@pytest.mark.parametrize("status", ["gone", "pulled", "sold", "Active", ""])
+def test_batch_status_is_constrained(db, sample, status):
+    """Two statuses, not four. 'pulled' and 'sold' are now invalid values.
+
+    They were removed on 13 Aug because the shop never used either — 1757
+    active and 583 pulled came from the import, zero sold, zero discounted — and
+    because a record of every item ever removed only grows on a laptop nobody
+    prunes. This is the backstop; app/routes/products.py refuses them first.
+    """
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("INSERT INTO batches (product_id, expiry_date, status) "
-                   "VALUES (?, ?, ?)", (sample["products"]["monster"], days(67), "gone"))
+                   "VALUES (?, ?, ?)", (sample["products"]["monster"], days(67), status))
+
+
+def test_a_batch_has_exactly_two_endings(db, sample):
+    """Discounted, or deleted. Nothing else is representable."""
+    import re
+
+    ddl = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='batches'"
+    ).fetchone()[0]
+    # Just the CHECK clause: sqlite_master keeps the comments too, and those
+    # explain what 'pulled' and 'sold' were, so searching the whole DDL finds
+    # the words it is meant to prove absent.
+    clause = re.search(r"CHECK\s*\(\s*status\s+IN\s*\(([^)]*)\)", ddl, re.I)
+    assert clause, f"no status CHECK found in:\n{ddl}"
+    values = {v.strip().strip("'\"") for v in clause.group(1).split(",")}
+    assert values == {"active", "discounted"}, values
+
+
+def test_products_are_not_attributed_to_a_person(db):
+    """A batch is something somebody did; a product is a fact about a barcode.
+
+    `added_by` and `resolved_by` stay on batches — they are why PINs exist.
+    """
+    columns = [c[1] for c in db.execute("PRAGMA table_info(products)")]
+    assert "created_by" not in columns
+    batch_columns = [c[1] for c in db.execute("PRAGMA table_info(batches)")]
+    assert "added_by" in batch_columns and "resolved_by" in batch_columns
+
+
+# The delete confirmation asks only when the item is still good AND still full
+# price. Anything else, and a decision about that item has already been made.
+
+@pytest.mark.parametrize("status,offset,expected", [
+    ("active", 4, True),        # still good, full price — ask
+    ("active", 1, True),
+    ("active", 0, True),        # expires today, still sellable — ask
+    ("active", -1, False),      # past its date — no question, it is being pulled
+    ("active", -30, False),
+    ("discounted", 4, False),   # already decided about, and marked down
+    ("discounted", 0, False),
+    ("discounted", -1, False),
+])
+def test_the_delete_confirmation_rule(status, offset, expected):
+    from app.catalogue import needs_confirmation
+
+    assert needs_confirmation(status, days(offset)) is expected
+
+
+def test_the_confirmation_counts_whole_days(db, sample):
+    from app.catalogue import days_until
+
+    assert days_until(days(4)) == 4
+    assert days_until(days(0)) == 0
+    assert days_until(days(-3)) == -3
+    assert days_until("not a date") is None
 
 
 # ------------------------------------------------------------- the barcode rule
@@ -548,10 +625,16 @@ def test_timestamps_are_shifted_to_shop_time(db, sample):
 
 
 def test_a_date_only_stamp_is_not_shifted_into_a_time(db, sample):
-    """The 583 migrated rows carry a date, not a timestamp. +10h invents 10am."""
+    """A stamp that is a date, not a timestamp. +10h would invent 10am.
+
+    The 583 migrated rows this was written for are gone with the status change,
+    and the app always writes a full datetime('now'). Kept because the shift is
+    still applied to whatever is in the column, and a date-only value is exactly
+    the input that turns into a plausible-looking lie.
+    """
     import datetime as dt
 
-    db.execute("UPDATE batches SET status = 'pulled', resolved_at = ? WHERE id = ?",
+    db.execute("UPDATE batches SET status = 'discounted', resolved_at = ? WHERE id = ?",
                ("2026-03-02", sample["batches"]["due_soon"]))
     db.commit()
 

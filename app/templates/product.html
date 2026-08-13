@@ -63,39 +63,65 @@
 
   <ul class="items">
     {% for b in batches %}
-      <li class="item item-stack{% if b.status in ('pulled', 'sold') %} item-done{% endif %}">
+      <li class="item item-stack" id="batch-{{ b.id }}">
         <span class="item-body">
           <span class="item-name">
             {{ b.expiry_date | au_date }}
-            {% if b.expiry_date < today and b.status in ('active', 'discounted') %}
-              <span class="tag">past date</span>
-            {% endif %}
-            {% if b.status != 'active' %}<span class="tag">{{ resolutions.get(b.status, b.status) }}</span>{% endif %}
+            {% if b.expiry_date < today %}<span class="tag">past date</span>{% endif %}
+            {% if b.status == 'discounted' %}<span class="tag">Discounted</span>{% endif %}
           </span>
           <span class="item-meta">
             Added{% if b.added_by_name %} by {{ b.added_by_name }}{% endif %} {{ b.added_at | au_when }}
-            {%- if b.resolved_at %} &middot; {{ resolutions.get(b.status, b.status) }}
+            {%- if b.resolved_at %} &middot; Discounted
               {%- if b.resolved_by_name %} by {{ b.resolved_by_name }}{% endif %} {{ b.resolved_at | au_when }}
             {%- endif %}
           </span>
           {% if b.note %}<span class="item-meta">{{ b.note }}</span>{% endif %}
         </span>
 
-        {% if b.status in ('active', 'discounted') %}
-          <form class="actions" method="post"
-                action="/products/{{ product.id }}/batches/{{ b.id }}">
-            {% if b.status == 'active' %}
-              <button class="btn btn-quiet btn-small" name="status" value="discounted">Discounted</button>
-            {% endif %}
-            <button class="btn btn-quiet btn-small" name="status" value="sold">Sold</button>
-            <button class="btn btn-quiet btn-small" name="status" value="pulled">Pulled</button>
-          </form>
-        {% endif %}
+        {# Two endings: a discount sticker, or gone. The confirmation is only
+           for an item still good and still full price — see needs_confirmation
+           in app/catalogue.py. It is revealed inline rather than through a JS
+           confirm(), and the no-JS path is the same two taps. #}
+        <span class="actions">
+          {% if b.status == 'active' %}
+            <form method="post" action="/products/{{ product.id }}/batches/{{ b.id }}">
+              <button class="btn btn-quiet btn-small" name="status" value="discounted">Discount</button>
+            </form>
+          {% endif %}
+
+          {% if needs_confirmation(b.status, b.expiry_date, today) %}
+            <details class="confirm">
+              <summary class="btn btn-quiet btn-small">Delete</summary>
+              <span class="confirm-body">
+                {% set left = days_until(b.expiry_date, today) %}
+                This expires {% if left == 0 %}today{% elif left == 1 %}tomorrow
+                {%- else %}in {{ left }} days{% endif %}. Delete it?
+                <form method="post"
+                      action="/products/{{ product.id }}/batches/{{ b.id }}/delete">
+                  <button class="btn btn-small" type="submit">Yes, delete</button>
+                </form>
+              </span>
+            </details>
+          {% else %}
+            <form method="post"
+                  action="/products/{{ product.id }}/batches/{{ b.id }}/delete">
+              <button class="btn btn-quiet btn-small" type="submit">Delete</button>
+            </form>
+          {% endif %}
+        </span>
       </li>
     {% endfor %}
   </ul>
 
-  <p class="note">Nothing is deleted. Pulled and sold dates stay here so waste can be reviewed.</p>
+  {% if not batches %}
+    <p class="empty">No dates recorded. The product stays either way.</p>
+  {% endif %}
+
+  <p class="note">
+    A date is deleted for real. The product is never deleted, even with no dates
+    left &mdash; take the Excel export from Settings if a record is wanted.
+  </p>
 
 </div>
 {% endblock %}

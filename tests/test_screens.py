@@ -10,6 +10,7 @@ lists the acceptance criteria each one has to meet.
 
 from __future__ import annotations
 
+import pytest
 from conftest import STAFF_NAME, STAFF_PIN, days
 
 
@@ -121,11 +122,19 @@ def test_home_hides_items_beyond_the_window(client, sample, db):
     assert _au(far_off) not in body
 
 
-def test_home_hides_resolved_batches(client, sample, db):
-    resolved = db.execute(
-        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+def test_home_shows_a_discounted_batch(client, sample, db):
+    """Inverted 13 Aug, and this is the point of the status change.
+
+    This used to assert the resolved batch was hidden, because 'pulled' and
+    'sold' meant gone-but-recorded. Both are removed: a discounted batch is
+    still on the shelf, still needs watching, and is the only resolution left.
+    A batch that is genuinely finished with is deleted, and a deleted row cannot
+    be hidden because it does not exist.
+    """
+    discounted = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["discounted"],)
     ).fetchone()[0]
-    assert _au(resolved) not in client.get("/").text
+    assert _au(discounted) in client.get("/").text
 
 
 def test_home_includes_the_window_edge(client, sample, db):
@@ -158,9 +167,10 @@ def test_uncategorised_product_renders_blank(client, sample):
 
 
 def test_home_counts_only_live_batches(client, sample):
-    """3 products; 4 live batches (the pulled one does not count)."""
+    """3 products; all 5 batches are live now that discounted is the only
+    resolution — there is no status that means present-but-not-counted."""
     body = client.get("/").text
-    assert "3 products, 4 being tracked" in body
+    assert "3 products, 5 being tracked" in body
 
 
 def test_photo_placeholder_when_no_image(client, sample):
@@ -291,13 +301,17 @@ def test_adding_an_unknown_barcode_creates_the_product_too(client, db, staff):
               "expiry_date": days(20)},
     )
     product = db.execute(
-        "SELECT id, name, category_id, created_by FROM products WHERE barcode = ?",
+        "SELECT id, name, category_id FROM products WHERE barcode = ?",
         ("9300600000123",),
     ).fetchone()
     assert product is not None
     assert product["name"] == "Solo Energy Lemon 500ml"
     assert product["category_id"] is None      # no category is a normal state
-    assert product["created_by"] == staff["id"]
+
+    # The person is recorded on the batch, not on the product — dropped 13 Aug.
+    assert db.execute(
+        "SELECT added_by FROM batches WHERE product_id = ?", (product["id"],)
+    ).fetchone()["added_by"] == staff["id"]
     assert db.execute(
         "SELECT COUNT(*) FROM batches WHERE product_id = ?", (product["id"],)
     ).fetchone()[0] == 1
@@ -342,18 +356,46 @@ def test_a_duplicate_still_keeps_the_category_that_was_typed(client, sample, db)
     ).fetchone()[0] == "Water"
 
 
-def test_a_date_freed_up_by_a_resolved_batch_is_accepted(client, sample, db):
-    """The pulled batch on that date is history. The date can come round again."""
-    freed = db.execute(
-        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+def test_a_discounted_batch_still_blocks_its_date(client, sample, db):
+    """Rewritten 13 Aug. A discounted batch is live, so the date is taken.
+
+    The old version used the 'pulled' batch to prove a resolved date came free
+    again. Nothing is resolved-but-present any more, so the only live status
+    besides active is 'discounted' — and that item is on the shelf, so recording
+    it twice is the duplicate this app exists to prevent.
+    """
+    taken = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["discounted"],)
     ).fetchone()[0]
+
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300601111111", "expiry_date": taken},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200            # refused, re-rendered
+    assert "Already tracked" in response.text
+
+
+def test_deleting_a_batch_frees_its_date(client, sample, db):
+    """Deletion is what frees a date now, and it frees it immediately.
+
+    This is why idx_batches_unique_live can stay partial and still be correct:
+    with no resolved-but-present rows, the deleted batch is simply not there.
+    """
+    batch_id = sample["batches"]["discounted"]
+    freed = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (batch_id,)
+    ).fetchone()[0]
+
+    client.post(f"/products/{sample['products']['curly']}/batches/{batch_id}/delete")
 
     response = client.post(
         "/scan/add",
         data={"barcode": "9300601111111", "expiry_date": freed},
         follow_redirects=False,
     )
-    assert response.status_code == 303
+    assert response.status_code == 303, "the freed date was still blocked"
     assert db.execute(
         "SELECT COUNT(*) FROM batches WHERE product_id = ? AND expiry_date = ? "
         "AND status = 'active'",
@@ -520,15 +562,21 @@ def test_product_list_filters_by_category(client, sample):
 
 
 def test_product_list_sorts_by_soonest_expiry(client, sample):
-    """Monster is 4 days overdue, the water is due in 2, the Tim Tams in 7."""
+    """Monster is 4 days overdue, the Tim Tams have a discounted date tomorrow,
+    the water is due in 2.
+
+    The Tim Tams moved ahead of the water on 13 Aug: their day-1 batch is
+    `discounted` rather than `pulled`, so it counts as live and is now their
+    soonest date. That is the status change working, not the sort breaking.
+    """
     body = client.get("/products").text
-    assert body.index("Monster Ultra Zero") < body.index("C/RIDGE WATER") < body.index("Tim Tam")
+    assert body.index("Monster Ultra Zero") < body.index("Tim Tam") < body.index("C/RIDGE WATER")
 
 
 def test_product_detail_shows_every_batch_and_who_added_them(client, sample):
     body = client.get(f"/products/{sample['products']['curly']}").text
-    assert _au(days(7)) in body        # live
-    assert _au(days(1)) in body        # pulled — history stays visible
+    assert _au(days(7)) in body        # active
+    assert _au(days(1)) in body        # discounted — still on the shelf
     assert "Mohit" in body             # the audit trail, not the signed-in user
 
 
@@ -540,22 +588,27 @@ def test_resolving_a_batch_records_who_and_when(client, sample, db, staff):
     batch = sample["batches"]["due_soon"]
     response = client.post(
         f"/products/{sample['products']['shouty']}/batches/{batch}",
-        data={"status": "pulled"},
+        data={"status": "discounted"},
         follow_redirects=False,
     )
     assert response.status_code == 303
     row = db.execute(
         "SELECT status, resolved_by, resolved_at FROM batches WHERE id = ?", (batch,)
     ).fetchone()
-    assert row["status"] == "pulled"
+    assert row["status"] == "discounted"
     assert row["resolved_by"] == staff["id"]
     assert row["resolved_at"] is not None
 
 
-def test_a_resolved_batch_leaves_the_due_list(client, sample):
+def test_only_deleting_takes_a_batch_off_the_due_list(client, sample):
+    """Rewritten 13 Aug. This used to mark the batch 'sold'.
+
+    No status removes anything from the worklist any more — 'discounted' stays
+    on it, because the item is still on the shelf. Deletion is the only way off,
+    and it is a real delete.
+    """
     batch = sample["batches"]["due_soon"]
-    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}",
-                data={"status": "sold"})
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/delete")
     assert "C/RIDGE WATER 1L" not in client.get("/").text
 
 
@@ -567,17 +620,42 @@ def test_a_discounted_batch_is_still_on_the_shelf(client, sample, db):
     assert "C/RIDGE WATER 1L" in client.get("/").text
 
 
-def test_nothing_is_hard_deleted(client, sample, db):
+def test_deleting_a_batch_really_deletes_it(client, sample, db):
+    """The reverse of what this file asserted until 13 Aug.
+
+    `test_nothing_is_hard_deleted` used to live here and guarded the opposite
+    rule. The shop decided against keeping a record of everything ever removed:
+    it only grows, on a laptop nobody prunes, and neither status that did it was
+    ever used once. The Excel export is where a snapshot gets kept.
+    """
+    batch = sample["batches"]["due_soon"]
     before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
-    client.post(f"/products/{sample['products']['shouty']}/batches/"
-                f"{sample['batches']['due_soon']}", data={"status": "pulled"})
-    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/delete")
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before - 1
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE id = ?", (batch,)).fetchone()[0] == 0
 
 
-def test_an_unknown_resolution_is_refused(client, sample):
+def test_the_product_survives_deleting_its_last_batch(client, sample, db):
+    """A product is never deleted. Not by staff, not at zero batches, not ever."""
+    product = sample["products"]["shouty"]
+    for batch in db.execute(
+        "SELECT id FROM batches WHERE product_id = ?", (product,)
+    ).fetchall():
+        client.post(f"/products/{product}/batches/{batch['id']}/delete")
+
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE product_id = ?",
+                      (product,)).fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == 1
+    assert client.get(f"/products/{product}").status_code == 200
+
+
+@pytest.mark.parametrize("status", ["binned", "pulled", "sold"])
+def test_an_unknown_resolution_is_refused(client, sample, status):
+    """'pulled' and 'sold' are unknown statuses now, not merely unused ones."""
     response = client.post(
         f"/products/{sample['products']['shouty']}/batches/{sample['batches']['due_soon']}",
-        data={"status": "binned"},
+        data={"status": status},
     )
     assert response.status_code == 400
 
@@ -745,9 +823,21 @@ def test_sheet_groups_by_category_with_uncategorised_last(client, sample, db):
 
 
 def test_sheet_sorts_by_date_within_a_group(client, sample, db):
-    """Two uncategorised items: the water in 2 days, the Tim Tams in 7."""
+    """The uncategorised group, in date order.
+
+    Asserted on the rendered dates rather than on two product names: the Tim
+    Tams now hold both the soonest date in the group (day 1, discounted) and the
+    latest (day 7), so naming products pins the test to which batch happens to
+    come first rather than to the ordering itself.
+    """
+    import re
+
     body = client.get("/sheet").text
-    assert body.index("C/RIDGE WATER 1L") < body.index("Tim Tam")
+    group = body.split("No category")[1]
+    dates = re.findall(r'<td class="col-date">([^<]+)</td>', group)
+    assert len(dates) >= 2, "expected several rows in the uncategorised group"
+    parsed = [_from_au(d) for d in dates]
+    assert parsed == sorted(parsed), f"out of order: {dates}"
 
 
 def test_sheet_has_a_tick_box_and_a_blank_price_column(client, sample):
@@ -762,11 +852,17 @@ def test_sheet_shows_the_barcode_on_every_line(client, sample):
     assert "9300609876543" in body
 
 
-def test_sheet_hides_resolved_batches(client, sample, db):
-    resolved = db.execute(
-        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+def test_sheet_shows_a_discounted_batch(client, sample, db):
+    """Inverted 13 Aug with the status change — see test_home_shows_a_discounted_batch.
+
+    A discounted item is still sellable and still wants a sticker checked, so it
+    belongs on the sheet. What the sheet leaves out is past dates, which is a
+    question about the date rather than the status.
+    """
+    discounted = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["discounted"],)
     ).fetchone()[0]
-    assert _au(resolved) not in client.get("/sheet").text
+    assert _au(discounted) in client.get("/sheet").text
 
 
 def test_sheet_leaves_out_past_date_items(client, sample, db):
@@ -843,13 +939,22 @@ def test_settings_opens_for_anyone_signed_in(client):
 
 def test_the_expiry_window_can_be_changed_and_the_screens_follow(client, sample, db):
     """It is a setting precisely so this does not need a code change."""
-    assert "Arnott" in client.get("/").text            # 7 days out, inside the window
+    edge = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["due_edge"],)
+    ).fetchone()[0]
+    assert _au(edge) in client.get("/").text           # 7 days out, inside the window
+
     client.post("/settings/window", data={"days": 3})
     assert db.execute(
         "SELECT value FROM settings WHERE key = 'expiry_window_days'"
     ).fetchone()[0] == "3"
-    assert "Arnott" not in client.get("/").text
-    assert "Due within 3 days" in client.get("/").text
+
+    # Checked on the date, not the product name: the Tim Tams also carry a
+    # discounted date tomorrow, which is inside any window, so the name stays on
+    # the page while the 7-day date must drop off it.
+    body = client.get("/").text
+    assert _au(edge) not in body
+    assert "Due within 3 days" in body
 
 
 def test_an_absurd_window_is_clamped_not_crashed(client, db):
@@ -1196,22 +1301,30 @@ def test_the_export_has_one_row_per_batch_and_a_header(client, sample):
                             "Days left", "Status"]
 
 
-def test_the_export_includes_resolved_batches(client, sample):
-    """Pulled rows are kept so waste can be reviewed — the export is where."""
+def test_the_export_includes_discounted_batches(client, sample):
+    """Every batch, and after 13 Aug that means every row that exists.
+
+    A deleted batch cannot appear here, which is why the export has to be taken
+    before a clear-out rather than after — it is the only record that keeps one.
+    """
     sheet = _sheet(client.get("/settings/export.xlsx"))
     statuses = [row[5].value for row in sheet.iter_rows(min_row=2)]
-    assert "pulled" in statuses
+    assert "discounted" in statuses
     assert statuses.count("active") == 4
+    assert "pulled" not in statuses and "sold" not in statuses
 
 
-def test_the_export_opens_on_what_is_still_on_the_shelf(client, sample):
-    """Live rows first, soonest first. Sorted by date alone, the shop's 583
-    pulled rows sit above everything that still matters."""
-    statuses = [row[5].value for row in _sheet(client.get("/settings/export.xlsx"))
-                .iter_rows(min_row=2)]
-    assert statuses[0] == "active"
-    assert statuses[-1] == "pulled"
-    assert statuses.index("pulled") == 4, "a resolved row is mixed in among the live ones"
+def test_the_export_is_in_date_order(client, sample):
+    """Soonest first, the same as every screen.
+
+    The old sort lifted live rows above resolved ones, because 583 already-pulled
+    rows were the oldest in the file and put the manager's cursor on the part that
+    no longer mattered. Those rows are gone, so plain date order is the useful
+    order again — and every remaining row is on the shelf.
+    """
+    dates = [row[3].value for row in _sheet(client.get("/settings/export.xlsx"))
+             .iter_rows(min_row=2)]
+    assert dates == sorted(dates), "the export is no longer in date order"
 
 
 def test_the_export_shows_uncategorised_as_blank_not_a_word(client, sample):
@@ -1266,3 +1379,10 @@ def _au(iso: str) -> str:
     from app.main import au_date
 
     return au_date(iso)
+
+
+def _from_au(rendered: str) -> str:
+    """'14 Aug 2026' -> '2026-08-14', for asserting on order rather than text."""
+    import datetime as dt
+
+    return dt.datetime.strptime(rendered.strip(), "%d %b %Y").date().isoformat()

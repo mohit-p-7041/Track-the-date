@@ -51,7 +51,9 @@ opens a short new-product form. Submit writes immediately.
 - [x] Submitting writes one batch with `added_by` set to the signed-in user
 - [x] **Duplicate: the app catches it before insert** and says "Already tracked — expires
       14 Sep 2026". Not a database error, and no offer to increase a quantity
-- [x] A duplicate whose earlier batch is `pulled` or `sold` is accepted, not blocked
+- [x] ~~A duplicate whose earlier batch is `pulled` or `sold` is accepted, not blocked~~ —
+      obsolete 13 Aug. Both statuses are gone, so there is no resolved-but-present row to step
+      past. A date comes free when the batch is **deleted**, and then it is free immediately
 - [x] After a successful add the form resets to the barcode field, ready for the next scan
 - [x] Nothing is held in browser state between entries — the laptop can sleep mid-session
 - [x] Date entry accepts a fast typed date; never renders or parses US format
@@ -240,11 +242,17 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    `]C1…` on a real code and were recovered**, and **8 were deleted** (7 marketing URLs, 1
    40-digit gun misfire) with 13 batches. 952→944 products, 2340→2327 batches. The importer
    applies the same rule, so the laptop deploy no longer dies on those rows.
-3. `[ ]` **Two statuses, and swipe to act.** `pulled` and `sold` are removed; a batch is `active`
-   or `discounted`, and anything else is a real deletion. On the Due screen, **right→left
-   deletes, left→right discounts**. Deleting a past-date item asks nothing; deleting one still in
-   date asks "expires in N days, are you sure?" first. The 583 imported `pulled` rows go — take
-   an Excel export first and keep it. Never deletes the product, even at zero batches.
+3. `[~]` **Two statuses, and swipe to act.** Split in two while building — the doc calls it "two
+   parts" and the halves have different risk, so they were built and committed separately.
+
+   - `[x]` **Two statuses.** `pulled` and `sold` removed; a batch is `active` or `discounted`, and
+     anything else is a real deletion. The 581 imported `pulled` rows are gone (581 not 583 — two
+     sat on barcodes the new rule had already refused). Delete and Discount work from the product
+     screen, with the confirmation revealed inline via `<details>` and no `confirm()`. Never
+     deletes the product, even at zero batches. Done 13 Aug; 2327→1746 batches.
+   - `[ ]` **Swipe on the Due screen.** Right→left deletes, left→right discounts, with a non-swipe
+     path for the laptop. The buttons and both routes already exist, so this is the gesture layer
+     on top of them.
 4. `[ ]` **Edit toggle on product detail.** Editing controls are always on screen. One Edit
    toggle covering name, category and photo — **including renaming a product**, which is now a
    deliberate decision rather than an open question.
@@ -252,8 +260,11 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    with new `edited_by` / `edited_at` columns.
 6. `[ ]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
    which is normal and recoverable. Say how many products it affects first.
-7. `[ ]` **Drop `products.created_by`.** Only batches carry a person; a product is a fact about a
-   barcode. Rides along with item 3's migration.
+7. `[x]` **Drop `products.created_by`.** Only batches carry a person; a product is a fact about a
+   barcode. Rode along with item 3's migration as planned. The column held **nothing** — 0 rows
+   set, not the 2 of 954 the punch list recorded, confirmed against the pre-migration backup — so
+   there was no data to lose. Removed from `schema.sql` too, or a fresh laptop database would
+   still have had it.
 8. `[ ]` **The photo mount ignores `TTD_PHOTO_DIR`.** `app/main.py:35` hardcodes `data/photos`
    while `photos.py` honours the variable, so uploads and serving can disagree. Production is
    unaffected — both resolve the same when the variable is unset. After Saturday.

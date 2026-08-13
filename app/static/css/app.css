@@ -275,9 +275,10 @@ main { padding-bottom: 3rem; }
 
 .item-stack { align-items: flex-start; }
 
-/* Resolved dates stay on the page — waste has to stay reviewable — but they
-   are history, so they sit back. */
-.item-done { color: #8a8a90; }
+/* `.item-done` lived here to grey out pulled and sold rows. Both statuses were
+   removed on 13 Aug — a batch is active or discounted, and anything else is a
+   real deletion — so there is no resolved-but-present row left to sit back.
+   A discounted batch is still on the shelf and reads at full strength. */
 
 .tag {
   display: inline-block;
@@ -301,6 +302,30 @@ main { padding-bottom: 3rem; }
 }
 
 .btn-small { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
+
+/* Deleting a batch asks first only when the item is still good and still full
+   price. <details> gives that two-step reveal with no script at all, which is
+   why there is no confirm() near this — a JS dialog blocks the page and reads
+   like a browser error on an iPad.
+
+   The marker is removed three ways because the three engines disagree, and
+   .btn already sets display:inline-block on the summary, which suppresses it in
+   most of them anyway. */
+.confirm { display: inline-block; }
+.confirm > summary { cursor: pointer; list-style: none; }
+.confirm > summary::marker { content: ""; }
+.confirm > summary::-webkit-details-marker { display: none; }
+
+.confirm-body {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: #6a6a70;
+}
 
 .thumb-big { width: 84px; height: 84px; }
 
