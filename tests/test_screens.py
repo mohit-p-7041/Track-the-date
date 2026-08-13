@@ -173,75 +173,60 @@ def test_home_counts_only_live_batches(client, sample):
     assert "3 products, 5 being tracked" in body
 
 
-def test_every_due_row_can_be_acted_on_without_a_gesture(client, sample):
-    """The laptop has no touchscreen, so swipe cannot be the only way in.
+def test_every_due_row_has_buttons_for_both_actions(client, sample):
+    """Buttons, not gestures — swipe was removed on 13 Aug after the iPad test.
 
-    Both forms are in the markup and do the work; swipe.js only submits one of
-    them. That is also why the screen still functions with JS off.
+    A gesture whose threshold a person cannot see is a guess, and the two guesses
+    were "delete" and "discount". The buttons say what they do.
     """
     body = client.get("/").text
     # Four rows are on the page: overdue, +2, +7 and the discounted +1. The +30
     # batch is outside the window, so it is not here to be acted on.
-    assert body.count('data-action="delete"') == 4      # every row shown
-    assert body.count('data-action="discount"') == 3    # not the discounted one
+    assert body.count("/delete") == 4                   # every row shown
+    assert body.count('value="discounted"') == 3        # not the already-discounted one
+    assert body.count("/full-price") == 1               # only the discounted one
     assert 'value="/"' in body                          # comes back to the Due screen
 
 
-def test_the_swipe_confirmation_is_only_on_rows_that_need_asking(client, sample, db):
-    """The rule comes from the server, not from JS re-deriving it from dates.
+def test_the_due_screen_needs_no_javascript(client, sample):
+    """It is the busiest read-only screen in the shop, and now carries no script.
 
-    Live batches in `sample`: overdue (past, active), due_soon (+2, active),
-    due_edge (+7, active), outside (+30, active, beyond the window so not shown),
+    The delete confirmation used to be built by swipe.js. It is a <details> the
+    server chooses to render, so the rule lives in needs_confirmation() and there
+    is no script that could disagree with it — or fail to load and take the
+    confirmation with it.
+    """
+    body = client.get("/").text
+    assert "<script" not in body
+    assert "swipe.js" not in body
+    assert client.get("/static/js/swipe.js").status_code == 404
+
+
+def test_the_delete_confirmation_is_only_on_rows_that_need_asking(client, sample, db):
+    """Live batches in `sample`: overdue (past, active), due_soon (+2, active),
+    due_edge (+7, active), outside (+30, beyond the window so not shown),
     discounted (+1). Of the four on the page, only the two in-date active ones
     ask — the past-date one does not, and neither does the discounted one.
     """
     body = client.get("/").text
-    assert body.count("data-confirm=") == 2
-    assert "This expires in 2 days. Delete it?" in body
-    assert "This expires in 7 days. Delete it?" in body
+    assert body.count('<details class="confirm">') == 2
+    collapsed = " ".join(body.split())
+    assert "This expires in 2 days. Delete it?" in collapsed
+    assert "This expires in 7 days. Delete it?" in collapsed
 
 
-def test_the_swipe_script_never_uses_a_blocking_dialog(client):
-    """No confirm(): it blocks the page and reads like a browser error on iPad."""
-    js = client.get("/static/js/swipe.js").text
-    assert "confirm(" not in js.replace("window.confirm()", "")
-    assert "alert(" not in js and "prompt(" not in js
+def test_tapping_the_row_covers_the_thumbnail(client, sample):
+    """The picture is the first thing a thumb reaches, and it did nothing before.
 
-
-def test_swiping_left_deletes_and_right_discounts(client):
-    """The directions the shop asked for, and they are not interchangeable.
-
-    Asserted on the pairing rather than on the two strings existing separately:
-    swapping the branches leaves every substring in place, so a looser check
-    passes while a right-to-left swipe discounts and a left-to-right one deletes.
-    Getting this backwards deletes stock somebody meant to mark down.
-
-    A source assertion is weaker than running the code, and it is what is
-    available — a JS test runner means npm and a build step, which this project
-    has ruled out. The behaviour itself was checked by hand on the iPad.
+    The link used to wrap only the words, leaving the thumbnail outside it.
     """
-    import re
+    body = client.get("/").text
+    row = body.split('<li class="item">')[1].split("</a>")[0]
+    assert 'class="item-row"' in row
+    assert "thumb" in row, "the thumbnail is outside the link again"
 
-    js = client.get("/static/js/swipe.js").text
-    branches = re.search(
-        r"if \(dx <= -THRESHOLD\) \{(.*?)\} else if \(dx >= THRESHOLD\) \{(.*?)\}",
-        js, re.S,
-    )
-    assert branches, "the touchend direction branches are not in the shape expected"
-    leftward, rightward = branches.group(1), branches.group(2)
-
-    assert "requestDelete" in leftward, "right-to-left must delete"
-    assert "discount" not in leftward
-    assert "discount" in rightward, "left-to-right must discount"
-    assert "requestDelete" not in rightward
-
-
-def test_the_swipe_row_has_no_transition(client):
-    """No animation, by decision. The row follows the finger and snaps back."""
     css = client.get("/static/css/app.css").text
-    block = css.split(".item.swipe")[1].split("}")[0]
-    assert "transition" not in block
-    assert "pan-y" in block, "vertical scrolling must stay with the browser"
+    assert ".item-row {" in css
 
 
 def test_photo_placeholder_when_no_image(client, sample):
@@ -731,6 +716,100 @@ def test_an_unknown_resolution_is_refused(client, sample, status):
     assert response.status_code == 400
 
 
+def test_a_discounted_batch_can_go_back_to_full_price(client, sample, db):
+    """Added 13 Aug: discounting is one tap, so people will do it to the wrong row.
+
+    Not a deletion — the item is still on the shelf, just not marked down.
+    """
+    batch = sample["batches"]["discounted"]
+    response = client.post(
+        f"/products/{sample['products']['curly']}/batches/{batch}/full-price",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    row = db.execute(
+        "SELECT status, resolved_by, resolved_at FROM batches WHERE id = ?", (batch,)
+    ).fetchone()
+    assert row["status"] == "active"
+    # resolved_by means "who discounted this", so a batch nobody discounted has
+    # nobody against it.
+    assert row["resolved_by"] is None
+    assert row["resolved_at"] is None
+
+
+def test_going_back_to_full_price_keeps_the_batch(client, sample, db):
+    """It is an undo of the discount, not of the batch."""
+    batch = sample["batches"]["discounted"]
+    before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    client.post(f"/products/{sample['products']['curly']}/batches/{batch}/full-price")
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == 1
+
+
+def test_the_full_price_button_only_shows_on_a_discounted_row(client, sample):
+    """An active batch has nothing to undo."""
+    body = client.get("/").text
+    assert body.count("/full-price") == 1        # only the discounted one
+
+
+def test_only_a_discounted_batch_can_go_back_to_full_price(client, sample, db):
+    """Guarded in the SQL, so this cannot quietly un-resolve something else."""
+    batch = sample["batches"]["due_soon"]        # active already
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/full-price")
+    row = db.execute("SELECT status FROM batches WHERE id = ?", (batch,)).fetchone()
+    assert row["status"] == "active"             # unchanged, and no error
+
+
+def test_the_camera_does_not_save_by_itself(client):
+    """From the iPad test: Take photo submitted the form and left edit mode.
+
+    Taking a photo is one step of filling the form in, not the act of submitting
+    it — it used to commit a name somebody might still have been typing.
+    """
+    import re
+
+    js = client.get("/static/js/photo.js").text
+    # Quoted, because 'camera-take' is a substring of 'camera-taken' and an
+    # unquoted split lands on the wrong occurrence.
+    handler = re.search(
+        r"getElementById\('camera-take'\)\.addEventListener\('click',(.*?)\n  \}\);",
+        js, re.S,
+    )
+    assert handler, "the camera-take handler is not in the shape expected"
+    assert "upload(" not in handler.group(1), "taking a photo uploads immediately again"
+    assert "captured = blob" in handler.group(1)
+    assert "camera-taken" in js, "nothing tells the person the photo is held"
+
+
+def test_the_product_screen_says_the_photo_is_waiting(client, sample):
+    """Otherwise a taken photo looks like nothing happened."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert 'id="camera-taken"' in body
+    assert "press <strong>Save</strong>" in body
+
+
+def test_a_plus_button_reaches_the_scan_page_from_everywhere(client, sample):
+    """Adding a date happens hundreds of times a week — always under a thumb."""
+    for path in ("/", "/products", "/sheet", "/settings",
+                 f"/products/{sample['products']['monster']}"):
+        body = client.get(path).text
+        assert 'class="fab no-print"' in body, path
+        assert 'href="/scan"' in body, path
+
+
+def test_the_plus_button_is_not_on_the_printed_sheet(client, sample):
+    """It is no-print, and the print CSS has to actually hide that class."""
+    css = client.get("/static/css/app.css").text
+    print_block = css.split("@page")[1]
+    assert ".no-print" in print_block
+
+
+def test_the_plus_button_is_hidden_from_anyone_not_signed_in(anon_client, staff):
+    assert 'class="fab' not in anon_client.get("/login").text
+
+
 def test_a_batch_date_can_be_corrected(client, sample, db, staff):
     """Punch list item 5. A date saved wrong used to live forever."""
     batch = sample["batches"]["due_soon"]
@@ -995,6 +1074,48 @@ def test_a_photo_is_resized_and_stripped(client, sample, photo_dir):
     assert (photo_dir / "9300601234567.jpg").stat().st_size < 80 * 1024
 
 
+def test_an_uploaded_photo_actually_serves(client, sample, db, photo_dir):
+    """Punch list item 8, and the test that could not exist before it.
+
+    The photo folder was served by a StaticFiles mount over a hardcoded path
+    while uploads honoured TTD_PHOTO_DIR, so with the variable set the two
+    disagreed and every image rendered broken — which is what the iPad session
+    saw. A mount binds its directory once at import, and the suite points each
+    test at a fresh temp folder, so no test could ever have caught it. Served by
+    a route resolved per request, this fails when they disagree.
+    """
+    _edit(client, sample["products"]["monster"],
+          files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")})
+
+    stored = db.execute(
+        "SELECT image_path FROM products WHERE id = ?", (sample["products"]["monster"],)
+    ).fetchone()[0]
+    assert stored == "data/photos/9300601234567.jpg"
+
+    response = client.get(f"/{stored}")
+    assert response.status_code == 200, "the photo is stored but does not serve"
+    assert response.content[:2] == b"\xff\xd8", "that is not a JPEG"
+    assert len(response.content) == (photo_dir / "9300601234567.jpg").stat().st_size
+
+
+def test_a_photo_url_on_the_page_can_be_fetched(client, sample, db):
+    """The <img> src the Due screen renders has to be a URL that works."""
+    import re
+
+    _edit(client, sample["products"]["monster"],
+          files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")})
+
+    src = re.search(r'<img class="thumb" src="([^"]+)"', client.get("/").text)
+    assert src, "no photo rendered on the Due screen"
+    assert client.get(src.group(1)).status_code == 200
+
+
+def test_a_photo_request_cannot_climb_out_of_the_folder(client):
+    """The one place a request names a file on disk."""
+    for attempt in ("../../app/schema.sql", "..%2f..%2fapp%2fschema.sql", "../tecoma.db"):
+        assert client.get(f"/data/photos/{attempt}").status_code in (404, 400), attempt
+
+
 def test_a_photo_appears_on_batches_recorded_months_ago(client, sample):
     """It hangs off the barcode, so it backfills everything already recorded."""
     assert "thumb-empty" in client.get("/").text
@@ -1248,18 +1369,39 @@ def test_deleting_a_category_keeps_its_products(client, sample, db):
     assert client.get("/").status_code == 200
 
 
-def test_deleting_a_category_says_how_many_products_it_affects(client, sample, db):
-    """The number is the whole question — one product is nothing, ninety is not."""
-    # Whitespace-collapsed: the sentence spans two lines in the template, and
+def test_deleting_a_category_names_it_and_says_what_uses_it(client, sample, db):
+    """Reworded 13 Aug after the iPad test: the question names the category.
+
+    "Delete Confectionary" with a separate "Nothing is using it" read as two
+    unrelated bits of text. It is one sentence now, and the number is the whole
+    point of it — one product is nothing, ninety is worth a second look.
+    """
+    # Whitespace-collapsed: the sentence spans several lines in the template, and
     # asserting on the raw HTML would make it a test of the indentation.
     body = " ".join(client.get("/settings").text.split())
-    assert "1 product becomes uncategorised" in body
+    assert "Are you sure you want to delete Energy Drinks?" in body
+    assert "1 product uses it, and it becomes uncategorised" in body
 
     db.execute("INSERT INTO products (barcode, name, category_id) VALUES (?, ?, ?)",
                ("9300603333333", "Another Energy Drink", sample["cat_id"]))
     db.commit()
     body = " ".join(client.get("/settings").text.split())
-    assert "2 products become uncategorised" in body      # and it agrees in plural
+    assert "2 products use it, and they become uncategorised" in body
+
+
+def test_the_category_delete_sits_beside_rename(client, sample):
+    """It used to be on its own line below, reading like a separate section."""
+    body = client.get("/settings").text
+    row = body.split('class="cat-row"')[1].split("</details>")[0]
+    assert ">Rename<" in row
+    assert ">Delete<" in row
+
+
+def test_an_unused_category_says_nothing_is_using_it(client, db, staff):
+    """A fresh category has no products, and the sentence has to still read."""
+    client.post("/settings/categories", data={"name": "Confectionary"})
+    body = " ".join(client.get("/settings").text.split())
+    assert "Are you sure you want to delete Confectionary? Nothing is using it." in body
 
 
 def test_a_category_delete_is_not_gated_behind_a_role(client, sample, db):

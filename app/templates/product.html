@@ -66,6 +66,12 @@
           </div>
         </div>
 
+        {# Taking a photo fills the form in; it does not submit it. Revealed by
+           photo.js so the person knows the picture is held and waiting. #}
+        <p class="note" id="camera-taken" hidden>
+          Photo taken &mdash; press <strong>Save</strong> to keep it.
+        </p>
+
         <button class="btn btn-wide" type="submit">Save</button>
       </form>
     </details>
@@ -123,6 +129,13 @@
           {% if b.status == 'active' %}
             <form method="post" action="/products/{{ product.id }}/batches/{{ b.id }}">
               <button class="btn btn-quiet btn-small" name="status" value="discounted">Discount</button>
+            </form>
+          {% else %}
+            {# Discounting is one tap, so it needs an undo. Not a deletion — the
+               item is still on the shelf, just not marked down. #}
+            <form method="post"
+                  action="/products/{{ product.id }}/batches/{{ b.id }}/full-price">
+              <button class="btn btn-quiet btn-small" type="submit">Back to full price</button>
             </form>
           {% endif %}
 

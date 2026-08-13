@@ -285,6 +285,35 @@ def resolve_batch(
     return RedirectResponse(_back(next, product_id), status_code=303)
 
 
+@router.post("/products/{product_id}/batches/{batch_id}/full-price")
+def undiscount_batch(
+    request: Request,
+    product_id: int,
+    batch_id: int,
+    next: str = Form(""),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Put a discounted batch back to full price.
+
+    Added 13 Aug, after the iPad session: discounting is one tap and people will
+    do it to the wrong row, so it needs an undo. It is not a deletion — the item
+    is still on the shelf, it just is not marked down any more.
+
+    The resolution is cleared rather than recorded as a second event. `resolved_by`
+    means "who discounted this", and a batch that is no longer discounted has
+    nobody who discounted it. Who added it is untouched, and if the mistake is
+    worth attributing, the Excel export still carries every row.
+    """
+    conn.execute(
+        "UPDATE batches SET status = 'active', resolved_by = NULL, resolved_at = NULL "
+        "WHERE id = ? AND product_id = ? AND status = 'discounted'",
+        (batch_id, product_id),
+    )
+    conn.commit()
+    return RedirectResponse(_back(next, product_id), status_code=303)
+
+
 @router.post("/products/{product_id}/batches/{batch_id}/date")
 def edit_batch_date(
     request: Request,

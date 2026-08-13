@@ -26,6 +26,11 @@
   var MAX_PX = 1400;
   var QUALITY = 0.82;
 
+  /* A photo taken with the camera, held until the person presses Save rather
+     than posted the moment it is taken. */
+  var captured = null;
+  var taken = document.getElementById('camera-taken');
+
   function shrink(file) {
     return new Promise(function (resolve, reject) {
       var image = new Image();
@@ -64,6 +69,13 @@
   }
 
   form.addEventListener('submit', function (event) {
+    /* A photo taken with the camera is already shrunk and waiting. */
+    if (captured) {
+      event.preventDefault();
+      upload(captured);
+      return;
+    }
+
     var file = input.files && input.files[0];
     if (!file) return;                       // nothing chosen; let it post
     event.preventDefault();
@@ -74,6 +86,16 @@
       button.disabled = false;
       form.submit();
     });
+  });
+
+  /* Choosing a file discards a photo taken a moment earlier, and vice versa. */
+  input.addEventListener('change', function () {
+    if (input.files && input.files[0]) {
+      captured = null;
+      if (taken) {
+        taken.hidden = true;
+      }
+    }
   });
 
   /* ---- the laptop webcam, and the iPad camera once HTTPS is in ----------
@@ -116,6 +138,11 @@
 
   document.getElementById('camera-cancel').addEventListener('click', stop);
 
+  /* Take the photo, keep it, and let the person press Save.
+     Until 13 Aug this called upload() straight away, so taking a photo saved the
+     whole form and navigated — which dropped you out of edit mode mid-edit and
+     committed a name you might still have been typing. Taking a photo is one
+     step of filling the form in, not the act of submitting it. */
   document.getElementById('camera-take').addEventListener('click', function () {
     if (!stream) return;
     var scale = Math.min(1, MAX_PX / Math.max(view.videoWidth, view.videoHeight));
@@ -125,7 +152,14 @@
     canvas.getContext('2d').drawImage(view, 0, 0, canvas.width, canvas.height);
     stop();
     canvas.toBlob(function (blob) {
-      if (blob) upload(blob);
+      if (!blob) return;
+      captured = blob;
+      /* The file input and the camera are two ways to answer the same question,
+         so the last one used wins. */
+      input.value = '';
+      if (taken) {
+        taken.hidden = false;
+      }
     }, 'image/jpeg', QUALITY);
   });
 

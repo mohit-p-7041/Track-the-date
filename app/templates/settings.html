@@ -20,31 +20,35 @@
 
   <h2 class="head">Categories</h2>
   <div class="card">
+    {# Rename and Delete sit on the same line, because they are the two things you
+       do to a category and putting Delete on its own row read like a separate
+       section. The count stays on the line too — it is what both actions carry. #}
     {% for c in categories %}
-      <form class="row-form" method="post" action="/settings/categories/{{ c.id }}">
-        <input class="field" name="name" value="{{ c.name }}" autocomplete="off">
-        <button class="btn btn-quiet" type="submit">Rename</button>
-        <span class="note">{{ c.products }} product{{ '' if c.products == 1 else 's' }}</span>
-      </form>
+      <div class="cat-row">
+        <form class="row-form" method="post" action="/settings/categories/{{ c.id }}">
+          <input class="field" name="name" value="{{ c.name }}" autocomplete="off">
+          <button class="btn btn-quiet" type="submit">Rename</button>
+        </form>
 
-      {# Deleting says what it will affect first, because the number is the whole
-         question — losing a category off one product is nothing, off ninety it
-         is worth a second look. Nothing is destroyed either way: the products
-         become uncategorised, which is a normal state. #}
-      <details class="confirm">
-        <summary class="btn btn-quiet btn-small">Delete {{ c.name }}</summary>
-        <span class="confirm-body">
-          {% if c.products %}
-            {{ c.products }} product{{ '' if c.products == 1 else 's' }}
-            {{ 'becomes' if c.products == 1 else 'become' }} uncategorised.
-          {% else %}
-            Nothing is using it.
-          {% endif %}
-          <form method="post" action="/settings/categories/{{ c.id }}/delete">
-            <button class="btn btn-small" type="submit">Yes, delete</button>
-          </form>
-        </span>
-      </details>
+        <details class="confirm">
+          <summary class="btn btn-quiet">Delete</summary>
+          <span class="confirm-body">
+            Are you sure you want to delete {{ c.name }}?
+            {% if c.products %}
+              {{ c.products }} product{{ '' if c.products == 1 else 's' }}
+              use{{ 's' if c.products == 1 else '' }} it, and
+              {{ 'it becomes' if c.products == 1 else 'they become' }} uncategorised.
+            {% else %}
+              Nothing is using it.
+            {% endif %}
+            <form method="post" action="/settings/categories/{{ c.id }}/delete">
+              <button class="btn btn-small" type="submit">Yes, delete</button>
+            </form>
+          </span>
+        </details>
+
+        <span class="note">{{ c.products }} product{{ '' if c.products == 1 else 's' }}</span>
+      </div>
     {% endfor %}
 
     <form class="row-form" method="post" action="/settings/categories">

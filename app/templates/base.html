@@ -26,6 +26,16 @@
     {% block content %}{% endblock %}
   </main>
 
+  {# Adding a date is what this app is for, and it happens hundreds of times a
+     week — so it gets a target that is always under a thumb rather than a trip to
+     the nav bar at the top. Only for someone signed in, and never on the printed
+     sheet. It is a link, not a script: the Scan page is a page. #}
+  {% if user %}
+    <a class="fab no-print" href="/scan" aria-label="Add a date">
+      <span aria-hidden="true">+</span>
+    </a>
+  {% endif %}
+
   {% block scripts %}{% endblock %}
 </body>
 </html>

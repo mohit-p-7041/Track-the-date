@@ -327,29 +327,25 @@ main { padding-bottom: 3rem; }
   color: #6a6a70;
 }
 
-/* Swipe rows on the Due screen. Deliberately no transition: the row follows the
-   finger while it is down and snaps back the instant it lifts. Adding easing
-   here would be the animation this project decided against, and it would also
-   make the row lag behind the thumb, which reads as lag rather than polish.
-
-   touch-action: pan-y keeps vertical scrolling with the browser and gives the
-   horizontal axis to the gesture, so a long list still scrolls normally. */
-.item.swipe {
-  touch-action: pan-y;
-  flex-wrap: wrap;
-}
-
-.swipe-confirm {
-  flex-basis: 100%;
+/* The Due screen's rows. Swipe lived here until 13 Aug — the row followed the
+   finger and snapped back — and came out after the iPad session: a gesture whose
+   threshold a person cannot see is a guess, and the guesses were "delete" and
+   "discount". The buttons say what they do instead, and nothing here needs a
+   transition because nothing moves. */
+.item-row {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.4rem;
-  font-size: 0.85rem;
-  color: #6a6a70;
+  gap: 0.75rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  /* The tap target covers the thumbnail as well as the words. Tapping the
+     picture did nothing before, and it is the first thing a thumb reaches. */
+  padding: 0.15rem 0;
 }
+
+.item-row:active { background: #f2f2f5; }
 
 .thumb-big { width: 84px; height: 84px; }
 
@@ -573,3 +569,65 @@ main { padding-bottom: 3rem; }
 
   .col-price { border-bottom: 1px solid #999; }
 }
+
+/* ------------------------------------------------- iPad session, 13 Aug
+   Fixes from using the app on a real iPad rather than a browser window. */
+
+/* A date input is a fixed-width thing — dd/mm/yyyy and nothing else — but it was
+   inheriting .field's width:100% and stretching the width of the card, which
+   made an empty one read as a big blank box rather than a date to fill in.
+   `width: auto` alone is not enough on iOS, which lays the control out at its own
+   idea of intrinsic size, hence the explicit min-width. */
+input[type="date"].field {
+  width: auto;
+  min-width: 11rem;
+  max-width: 100%;
+}
+
+/* The category picker is an <input list>, and on iPadOS the dropdown only opens
+   from the chevron at the right-hand end — a small target next to a wide field.
+   A taller control makes that chevron taller with it. */
+input[list].field {
+  min-height: 3rem;
+  padding-right: 2.25rem;
+}
+
+/* Rename and Delete on one line, with the count after them. Wraps rather than
+   squeezing, because a long category name plus two buttons does not fit an iPad
+   in portrait. */
+.cat-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.cat-row .row-form { margin-bottom: 0; flex: 1 1 16rem; }
+.cat-row .note { align-self: center; white-space: nowrap; }
+.cat-row .confirm-body { flex-basis: 100%; }
+
+/* Always under a thumb, bottom right, on every screen. Adding a date is the
+   thing this app exists for; it should never need a trip to the nav bar.
+   The safe-area inset keeps it clear of the iPad's home indicator. */
+.fab {
+  position: fixed;
+  right: calc(1rem + env(safe-area-inset-right));
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  width: 3.75rem;
+  height: 3.75rem;
+  border-radius: 50%;
+  background: #0a58ca;
+  color: #fff;
+  border: 1px solid #0a58ca;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.1rem;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  z-index: 20;
+}
+
+.fab:active { background: #084298; }

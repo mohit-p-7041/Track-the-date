@@ -67,6 +67,16 @@ These were considered and settled. Don't "improve" them into something else.
   when images arrive.
 - **No animation, no transitions.** Adding a product happens hundreds of times a week. Clean and
   fast beats polished. Optimise the add path above everything else.
+- **Buttons, not gestures.** Swipe-to-act was built on 13 Aug and removed the same day after the
+  iPad session: a person cannot see where the threshold is, so every swipe is a guess, and the
+  guesses were "delete" and "discount". Don't propose it again. The Due screen now carries no
+  JavaScript at all — the delete confirmation is a `<details>` the server chooses to render.
+- **A discount is undoable.** It is one tap, so it will land on the wrong row. "Back to full
+  price" clears the resolution rather than recording a second event: `resolved_by` means "who
+  discounted this", and a batch nobody discounted has nobody against it. A *deletion* is still
+  final — that is the asymmetry, and it is deliberate.
+- **A floating + is always in the bottom-right corner**, going to Scan. Adding a date is what this
+  app is for; it should never need a trip to the nav bar.
 - **On demand, not always on.** Staff double-click `start.bat` for a scan session (mainly
   weekends) and close the window after. No service, no auto-start. Backups therefore run at
   startup — a nightly job would never fire.
@@ -87,7 +97,7 @@ app/
   security.py     PIN hashing
   routes/         one module per area: login, home, scan, products, sheet, settings
   templates/      Jinja2 — base.html and one per screen
-  static/         css, js (keypad, photo, swipe), vendor
+  static/         css, js (keypad, photo), vendor
 tests/
   conftest.py     temp-database fixtures; never touches data/tecoma.db or data/photos
   test_screens.py routes render and show the right rows
@@ -181,6 +191,13 @@ explicitly and update it deliberately.
   The laptop can sleep at any moment, and anything not yet posted is gone.
 - Images: resize client-side before upload, then Pillow to max 800px long edge, JPEG q72, EXIF
   stripped. Target under 80 KB. Filenames keyed to barcode, stored under `data/photos/`.
+- **Photos are served by a route, not a `StaticFiles` mount**, resolved per request from
+  `photos.photo_dir()`. A mount binds its directory once at import, which is how the hardcoded
+  path and `TTD_PHOTO_DIR` were able to disagree without a single test noticing. Don't turn it
+  back into a mount.
+- **Taking a photo does not submit the form.** The camera fills a field in; `Save` saves. It used
+  to upload immediately, which dropped the person out of edit mode and committed a name they were
+  still typing.
 
 ## The data
 
@@ -215,7 +232,7 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 238 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 252 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
