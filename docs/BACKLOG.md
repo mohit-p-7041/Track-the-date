@@ -243,8 +243,9 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    `]C1…` on a real code and were recovered**, and **8 were deleted** (7 marketing URLs, 1
    40-digit gun misfire) with 13 batches. 952→944 products, 2340→2327 batches. The importer
    applies the same rule, so the laptop deploy no longer dies on those rows.
-3. `[~]` **Two statuses, and swipe to act.** Split in two while building — the doc calls it "two
-   parts" and the halves have different risk, so they were built and committed separately.
+3. `[x]` **Two statuses, and swipe to act.** Split in two while building — the doc calls it "two
+   parts" and the halves have different risk, so they were built and committed separately. Both
+   halves done 13 Aug.
 
    - `[x]` **Two statuses.** `pulled` and `sold` removed; a batch is `active` or `discounted`, and
      anything else is a real deletion. The 581 imported `pulled` rows are gone (581 not 583 — two
