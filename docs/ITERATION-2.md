@@ -131,7 +131,7 @@ that they are not two definitions of the same thing:
 One definition of "due" survives; the sheet is a narrower question asked of it. Cheapest fix on
 this list and the most visible on Saturday.
 
-### 3. Swipe to act on a batch, and drop two of the four statuses `[~]` — **statuses done 13 Aug**
+### 3. Swipe to act on a batch, and drop two of the four statuses `[x]` — **done 13 Aug**
 
 The biggest change on the list, and the one that touches the most files. Two parts.
 
@@ -168,6 +168,21 @@ Notes for building it: vanilla JS, no framework, and no `confirm()` dialog — r
 confirmation inline in the row. The laptop has no touchscreen and uses the same screen, so both
 actions need a non-swipe path as well. `idx_batches_unique_live` gets simpler as a result: with
 no resolved-but-present rows, a date is free again as soon as the batch is deleted.
+
+**Built 13 Aug, in two commits** — the statuses first, then the gesture, because they carry
+different risk and the doc calls them two parts. The buttons are the mechanism and the swipe is a
+shortcut that submits one of them, which is what makes the laptop and a JS-off browser work
+without a second code path. `data-confirm` is written by the server only for rows that need asking,
+so the rule lives in `needs_confirmation()` alone and the JS never re-derives it from dates.
+
+The index did get simpler, as predicted, and the tests that proved a resolved date could be reused
+were rewritten to delete the batch instead.
+
+**Still wants the iPad.** Touch events cannot be driven from a terminal, so the gesture has not
+been felt on glass — the threshold (64px) and the vertical-scroll cutoff (24px) were reasoned
+about, not tuned against a thumb. The direction pairing is held by a regex over `swipe.js` rather
+than by executing it, because a JS test runner means npm and a build step. Both are worth five
+minutes on the iPad before Saturday.
 
 Blast radius, checked: `app/routes/products.py`, `app/schema.sql`, `app/templates/product.html`,
 `app/templates/settings.html`, `scripts/check_db.py`, `scripts/export_xlsx.py`,
@@ -308,7 +323,7 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 |---|---|---|---|
 | 1 | ~~Sheet date range (item 2)~~ **done** | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
 | 2 | ~~Barcode rule + migration (item 1)~~ **done** | Junk products are permanent; every hour of scanning adds more | 1½ hr |
-| 3 | Statuses + swipe (item 3) — **statuses done**, swipe outstanding | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
+| 3 | ~~Statuses + swipe (item 3)~~ **done** | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
 | 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
 | 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
 | 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |

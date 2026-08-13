@@ -1,22 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Due{% endblock %}
 
+{# Right-to-left deletes, left-to-right discounts. The buttons are always in the
+   markup and do the actual work: the laptop has no touchscreen, and a gesture
+   that is the only way to reach an action is a feature nobody at the counter
+   can use. swipe.js just submits one of these forms, so there is one code path
+   however the action was asked for, and the screen still works with no JS.
+
+   `data-confirm` carries the sentence for a batch that is still good and still
+   full price — those ask before going. Everything else deletes on the spot,
+   because a decision about that item has already been made. #}
 {% macro batch_list(rows) %}
   <ul class="items">
     {% for r in rows %}
-      <li class="item">
+      {% set left = days_until(r.expiry_date, today) %}
+      <li class="item swipe" data-batch="{{ r.id }}"
+          {% if needs_confirmation(r.status, r.expiry_date, today) %}
+            data-confirm="This expires {% if left == 0 %}today{% elif left == 1 %}tomorrow{% else %}in {{ left }} days{% endif %}. Delete it?"
+          {% endif %}>
         {% if r.image_path %}
           <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
         {% else %}
           <span class="thumb thumb-empty" aria-hidden="true"></span>
         {% endif %}
         <a class="item-body" href="/products/{{ r.product_id }}">
-          <span class="item-date">{{ r.expiry_date | au_date }}</span>
+          <span class="item-date">
+            {{ r.expiry_date | au_date }}
+            {% if r.status == 'discounted' %}<span class="tag">Discounted</span>{% endif %}
+          </span>
           <span class="item-name">{{ r.name }}</span>
           <span class="item-meta">
             {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
           </span>
         </a>
+
+        <span class="actions">
+          {% if r.status == 'active' %}
+            <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}"
+                  data-action="discount">
+              <input type="hidden" name="status" value="discounted">
+              <input type="hidden" name="next" value="/">
+              <button class="btn btn-quiet btn-small" type="submit">Discount</button>
+            </form>
+          {% endif %}
+          <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}/delete"
+                data-action="delete">
+            <input type="hidden" name="next" value="/">
+            <button class="btn btn-quiet btn-small" type="submit">Delete</button>
+          </form>
+        </span>
+
+        {# Filled in and revealed by swipe.js, or by the Delete button when the
+           batch needs asking about. Empty and hidden otherwise. #}
+        <span class="swipe-confirm" hidden></span>
       </li>
     {% endfor %}
   </ul>
@@ -53,4 +89,8 @@
     {{ today | au_date }}
   </p>
 
+{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/swipe.js"></script>
 {% endblock %}

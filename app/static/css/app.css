@@ -327,6 +327,30 @@ main { padding-bottom: 3rem; }
   color: #6a6a70;
 }
 
+/* Swipe rows on the Due screen. Deliberately no transition: the row follows the
+   finger while it is down and snaps back the instant it lifts. Adding easing
+   here would be the animation this project decided against, and it would also
+   make the row lag behind the thumb, which reads as lag rather than polish.
+
+   touch-action: pan-y keeps vertical scrolling with the browser and gives the
+   horizontal axis to the gesture, so a long list still scrolls normally. */
+.item.swipe {
+  touch-action: pan-y;
+  flex-wrap: wrap;
+}
+
+.swipe-confirm {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: #6a6a70;
+}
+
 .thumb-big { width: 84px; height: 84px; }
 
 .camera-view {

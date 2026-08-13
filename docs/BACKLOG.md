@@ -250,9 +250,13 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
      sat on barcodes the new rule had already refused). Delete and Discount work from the product
      screen, with the confirmation revealed inline via `<details>` and no `confirm()`. Never
      deletes the product, even at zero batches. Done 13 Aug; 2327→1746 batches.
-   - `[ ]` **Swipe on the Due screen.** Right→left deletes, left→right discounts, with a non-swipe
-     path for the laptop. The buttons and both routes already exist, so this is the gesture layer
-     on top of them.
+   - `[x]` **Swipe on the Due screen.** Right→left deletes, left→right discounts. Done 13 Aug.
+     The buttons are always in the markup and do the work; `swipe.js` only decides that a finger
+     movement meant one of them, so the laptop and a JS-off browser behave identically. On the real
+     data all 83 rows carry both actions and exactly the 56 in-window ones ask before deleting.
+     **The gesture itself still wants a real iPad** — touch events cannot be driven from here, and
+     the direction pairing is held by a source assertion rather than by running the code, because a
+     JS test runner would mean npm and a build step.
 4. `[ ]` **Edit toggle on product detail.** Editing controls are always on screen. One Edit
    toggle covering name, category and photo — **including renaming a product**, which is now a
    deliberate decision rather than an open question.

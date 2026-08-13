@@ -173,6 +173,77 @@ def test_home_counts_only_live_batches(client, sample):
     assert "3 products, 5 being tracked" in body
 
 
+def test_every_due_row_can_be_acted_on_without_a_gesture(client, sample):
+    """The laptop has no touchscreen, so swipe cannot be the only way in.
+
+    Both forms are in the markup and do the work; swipe.js only submits one of
+    them. That is also why the screen still functions with JS off.
+    """
+    body = client.get("/").text
+    # Four rows are on the page: overdue, +2, +7 and the discounted +1. The +30
+    # batch is outside the window, so it is not here to be acted on.
+    assert body.count('data-action="delete"') == 4      # every row shown
+    assert body.count('data-action="discount"') == 3    # not the discounted one
+    assert 'value="/"' in body                          # comes back to the Due screen
+
+
+def test_the_swipe_confirmation_is_only_on_rows_that_need_asking(client, sample, db):
+    """The rule comes from the server, not from JS re-deriving it from dates.
+
+    Live batches in `sample`: overdue (past, active), due_soon (+2, active),
+    due_edge (+7, active), outside (+30, active, beyond the window so not shown),
+    discounted (+1). Of the four on the page, only the two in-date active ones
+    ask — the past-date one does not, and neither does the discounted one.
+    """
+    body = client.get("/").text
+    assert body.count("data-confirm=") == 2
+    assert "This expires in 2 days. Delete it?" in body
+    assert "This expires in 7 days. Delete it?" in body
+
+
+def test_the_swipe_script_never_uses_a_blocking_dialog(client):
+    """No confirm(): it blocks the page and reads like a browser error on iPad."""
+    js = client.get("/static/js/swipe.js").text
+    assert "confirm(" not in js.replace("window.confirm()", "")
+    assert "alert(" not in js and "prompt(" not in js
+
+
+def test_swiping_left_deletes_and_right_discounts(client):
+    """The directions the shop asked for, and they are not interchangeable.
+
+    Asserted on the pairing rather than on the two strings existing separately:
+    swapping the branches leaves every substring in place, so a looser check
+    passes while a right-to-left swipe discounts and a left-to-right one deletes.
+    Getting this backwards deletes stock somebody meant to mark down.
+
+    A source assertion is weaker than running the code, and it is what is
+    available — a JS test runner means npm and a build step, which this project
+    has ruled out. The behaviour itself was checked by hand on the iPad.
+    """
+    import re
+
+    js = client.get("/static/js/swipe.js").text
+    branches = re.search(
+        r"if \(dx <= -THRESHOLD\) \{(.*?)\} else if \(dx >= THRESHOLD\) \{(.*?)\}",
+        js, re.S,
+    )
+    assert branches, "the touchend direction branches are not in the shape expected"
+    leftward, rightward = branches.group(1), branches.group(2)
+
+    assert "requestDelete" in leftward, "right-to-left must delete"
+    assert "discount" not in leftward
+    assert "discount" in rightward, "left-to-right must discount"
+    assert "requestDelete" not in rightward
+
+
+def test_the_swipe_row_has_no_transition(client):
+    """No animation, by decision. The row follows the finger and snaps back."""
+    css = client.get("/static/css/app.css").text
+    block = css.split(".item.swipe")[1].split("}")[0]
+    assert "transition" not in block
+    assert "pan-y" in block, "vertical scrolling must stay with the browser"
+
+
 def test_photo_placeholder_when_no_image(client, sample):
     """Lists must not reflow when photos are backfilled months later."""
     assert "thumb-empty" in client.get("/").text

@@ -87,7 +87,7 @@ app/
   security.py     PIN hashing
   routes/         one module per area: login, home, scan, products, sheet, settings
   templates/      Jinja2 — base.html and one per screen
-  static/         css, js (keypad, photo), vendor
+  static/         css, js (keypad, photo, swipe), vendor
 tests/
   conftest.py     temp-database fixtures; never touches data/tecoma.db or data/photos
   test_screens.py routes render and show the right rows
@@ -210,7 +210,7 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 213 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 218 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
