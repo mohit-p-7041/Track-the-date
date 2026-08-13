@@ -26,6 +26,25 @@
         <button class="btn btn-quiet" type="submit">Rename</button>
         <span class="note">{{ c.products }} product{{ '' if c.products == 1 else 's' }}</span>
       </form>
+
+      {# Deleting says what it will affect first, because the number is the whole
+         question — losing a category off one product is nothing, off ninety it
+         is worth a second look. Nothing is destroyed either way: the products
+         become uncategorised, which is a normal state. #}
+      <details class="confirm">
+        <summary class="btn btn-quiet btn-small">Delete {{ c.name }}</summary>
+        <span class="confirm-body">
+          {% if c.products %}
+            {{ c.products }} product{{ '' if c.products == 1 else 's' }}
+            {{ 'becomes' if c.products == 1 else 'become' }} uncategorised.
+          {% else %}
+            Nothing is using it.
+          {% endif %}
+          <form method="post" action="/settings/categories/{{ c.id }}/delete">
+            <button class="btn btn-small" type="submit">Yes, delete</button>
+          </form>
+        </span>
+      </details>
     {% endfor %}
 
     <form class="row-form" method="post" action="/settings/categories">
@@ -36,6 +55,8 @@
     <p class="note">
       Categories mostly appear by themselves as staff type them while scanning.
       Names are matched without case, so Drinks and drinks cannot both exist.
+      Deleting one leaves its products uncategorised &mdash; nothing is lost that
+      retyping the name will not restore.
     </p>
   </div>
 

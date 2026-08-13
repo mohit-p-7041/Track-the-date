@@ -34,6 +34,7 @@ MESSAGES = {
     "category-renamed": "Category renamed.",
     "category-exists": "There is already a category with that name.",
     "category-blank": "Give the category a name.",
+    "category-deleted": "Category deleted. Its products are now uncategorised.",
     "staff-added": "Staff member added.",
     "staff-blank": "Give the person a name.",
     "staff-exists": "Somebody already has that name.",
@@ -159,6 +160,28 @@ def rename_category(
         return _back("category-exists")
     conn.commit()
     return _back("category-renamed")
+
+
+@router.post("/settings/categories/{category_id}/delete")
+def delete_category(
+    category_id: int,
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Remove a category. Not gated behind anything — there are no roles.
+
+    Safe by construction: `products.category_id` is ON DELETE SET NULL, so the
+    products fall back to uncategorised, which is a normal state every screen
+    already handles. Nothing is lost that retyping the name would not restore,
+    and the category list is meant to grow by itself — a typo made while
+    scanning should not be permanent.
+
+    The screen says how many products it affects before anyone presses this;
+    see the count already on each row.
+    """
+    conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    conn.commit()
+    return _back("category-deleted")
 
 
 def _name_taken(conn: sqlite3.Connection, name: str, exclude_id: int = 0) -> bool:

@@ -1033,6 +1033,56 @@ def test_an_absurd_window_is_clamped_not_crashed(client, db):
     assert client.get("/").status_code == 200
 
 
+def test_a_category_can_be_deleted(client, sample, db):
+    """Punch list item 6. A typo in the filter list was permanent before this."""
+    response = client.post(f"/settings/categories/{sample['cat_id']}/delete",
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert db.execute("SELECT COUNT(*) FROM categories WHERE id = ?",
+                      (sample["cat_id"],)).fetchone()[0] == 0
+
+
+def test_deleting_a_category_keeps_its_products(client, sample, db):
+    """ON DELETE SET NULL. Losing a category must never lose the catalogue."""
+    product = sample["products"]["monster"]
+    client.post(f"/settings/categories/{sample['cat_id']}/delete")
+
+    row = db.execute("SELECT category_id FROM products WHERE id = ?", (product,)).fetchone()
+    assert row is not None, "the product went with the category"
+    assert row["category_id"] is None       # uncategorised, which is normal
+    assert client.get(f"/products/{product}").status_code == 200
+    assert client.get("/").status_code == 200
+
+
+def test_deleting_a_category_says_how_many_products_it_affects(client, sample, db):
+    """The number is the whole question — one product is nothing, ninety is not."""
+    # Whitespace-collapsed: the sentence spans two lines in the template, and
+    # asserting on the raw HTML would make it a test of the indentation.
+    body = " ".join(client.get("/settings").text.split())
+    assert "1 product becomes uncategorised" in body
+
+    db.execute("INSERT INTO products (barcode, name, category_id) VALUES (?, ?, ?)",
+               ("9300603333333", "Another Energy Drink", sample["cat_id"]))
+    db.commit()
+    body = " ".join(client.get("/settings").text.split())
+    assert "2 products become uncategorised" in body      # and it agrees in plural
+
+
+def test_a_category_delete_is_not_gated_behind_a_role(client, sample, db):
+    """No roles, by decision. Anyone signed in can do this."""
+    assert "role" not in [c[1] for c in db.execute("PRAGMA table_info(users)")]
+    assert client.post(f"/settings/categories/{sample['cat_id']}/delete",
+                       follow_redirects=False).status_code == 303
+
+
+def test_deleting_a_category_removes_it_from_every_filter(client, sample):
+    """It is the filter list this exists to clean up."""
+    assert "Energy Drinks" in client.get("/").text
+    client.post(f"/settings/categories/{sample['cat_id']}/delete")
+    for path in ("/", "/products", "/scan", "/settings"):
+        assert "Energy Drinks" not in client.get(path).text, path
+
+
 def test_a_category_can_be_added_here(client, db, staff):
     client.post("/settings/categories", data={"name": "Chocolate"})
     row = db.execute("SELECT created_by FROM categories WHERE name = 'Chocolate'").fetchone()

@@ -243,7 +243,7 @@ Worth noting separately: the database has **27 `active` batches already past the
 them `sar ob`'s. Those are not touched by any migration — they are the backlog staff clear by
 swiping on Saturday, which is the first real use of item 3.
 
-### 6. Categories cannot be deleted `[ ]`
+### 6. Categories cannot be deleted `[x]` — **done 13 Aug**
 
 Settings can add and rename a category but not remove one. A typo made while scanning is
 therefore permanent in the filter list on every screen.
@@ -252,6 +252,12 @@ Build it, and **do not gate it behind a role** — see the decision below. Delet
 already a safe operation: `products.category_id` is `ON DELETE SET NULL`, so the products fall
 back to uncategorised, which is a normal state the app handles everywhere. Nothing is lost that
 retyping the category does not restore. Say how many products it affects before it happens.
+
+**Built 13 Aug, and it needed no schema change** — `ON DELETE SET NULL` was already in place, and
+that turned out to be the only interesting part: a test now changes it to `CASCADE` and confirms
+the suite goes red, because the failure mode is silently deleting the catalogue rather than
+anything visible on the screen. The count sentence agrees in plural, which is worth the two
+minutes on a screen the manager reads.
 
 ### 7. Products should not be attributed to a person `[x]` — **done 13 Aug**
 
@@ -324,7 +330,7 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 | 1 | ~~Sheet date range (item 2)~~ **done** | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
 | 2 | ~~Barcode rule + migration (item 1)~~ **done** | Junk products are permanent; every hour of scanning adds more | 1½ hr |
 | 3 | ~~Statuses + swipe (item 3)~~ **done** | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
-| 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
+| 4 | ~~Delete categories (item 6)~~ **done** | Small, and a typo in the filter list is permanent today | 30 min |
 | 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
 | 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
 | — | ~~Drop `products.created_by` (item 7)~~ **done** | Rode along with item 3's migration as planned | — |

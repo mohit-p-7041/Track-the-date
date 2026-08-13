@@ -200,7 +200,7 @@ having nothing left to mark.
 
 SPEC §3.7. Open to everyone — there are no roles.
 
-- [x] Add and rename categories
+- [x] Add, rename and delete categories
 - [x] Add staff and reset PINs
 - [x] Run a backup on demand and show when the last one ran
 - [x] Edit `expiry_window_days`
@@ -262,8 +262,10 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    deliberate decision rather than an open question.
 5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
    with new `edited_by` / `edited_at` columns.
-6. `[ ]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
-   which is normal and recoverable. Say how many products it affects first.
+6. `[x]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
+   which is normal and recoverable. Says how many products it affects first, with the plural
+   agreeing. Done 13 Aug. No new schema: `ON DELETE SET NULL` was already there, and a test now
+   proves changing it to CASCADE would be caught.
 7. `[x]` **Drop `products.created_by`.** Only batches carry a person; a product is a fact about a
    barcode. Rode along with item 3's migration as planned. The column held **nothing** — 0 rows
    set, not the 2 of 954 the punch list recorded, confirmed against the pre-migration backup — so
