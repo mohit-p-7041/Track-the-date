@@ -215,18 +215,38 @@ def test_the_delete_confirmation_is_only_on_rows_that_need_asking(client, sample
     assert "This expires in 7 days. Delete it?" in collapsed
 
 
-def test_tapping_the_row_covers_the_thumbnail(client, sample):
+@pytest.mark.parametrize("path,expected_class", [
+    ("/", 'class="item-row"'),                       # Due: shares the row with buttons
+    ("/products", 'class="item-row item-row-full"'),  # Products: no buttons, whole row
+])
+def test_tapping_a_row_covers_the_thumbnail(client, sample, path, expected_class):
     """The picture is the first thing a thumb reaches, and it did nothing before.
 
-    The link used to wrap only the words, leaving the thumbnail outside it.
+    The link used to wrap only the words, leaving the thumbnail outside it. Fixed
+    on the Due screen on 13 Aug and on the products list straight after, because
+    fixing one and not the other is exactly the kind of thing a parametrised test
+    would have caught the first time.
     """
-    body = client.get("/").text
-    row = body.split('<li class="item">')[1].split("</a>")[0]
-    assert 'class="item-row"' in row
-    assert "thumb" in row, "the thumbnail is outside the link again"
+    body = client.get(path).text
+    assert expected_class in body, path
+
+    # Sliced from the opening <a> rather than from the <li>: everything between
+    # the two contains the thumbnail whether or not the link wraps it, so the
+    # wider slice passes against the bug it is meant to catch.
+    link = body.split('<a class="item-row')[1].split("</a>")[0]
+    assert "thumb" in link, f"{path}: the thumbnail is outside the link again"
 
     css = client.get("/static/css/app.css").text
     assert ".item-row {" in css
+
+
+def test_the_products_row_link_reaches_the_date_column_too(client, sample):
+    """Nothing on this row needs to stay outside the link, so nothing does."""
+    body = client.get("/products").text
+    link = body.split('class="item-row item-row-full"')[1].split("</a>")[0]
+    assert "item-body" in link
+    assert "item-right" in link, "the date column is outside the tap target"
+    assert ".item-row-full" in client.get("/static/css/app.css").text
 
 
 def test_photo_placeholder_when_no_image(client, sample):

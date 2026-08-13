@@ -26,26 +26,32 @@
   {% if rows %}
     <ul class="items">
       {% for r in rows %}
+        {# The whole rectangle is the link — thumbnail and date column included.
+           There are no buttons on this row, so nothing has to stay outside it.
+           The Due screen got this on 13 Aug and this page was missed: tapping the
+           picture did nothing, and it is the first thing a thumb reaches. #}
         <li class="item">
-          {% if r.image_path %}
-            <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
-          {% else %}
-            <span class="thumb thumb-empty" aria-hidden="true"></span>
-          {% endif %}
-          <a class="item-body" href="/products/{{ r.id }}">
-            <span class="item-name">{{ r.name }}</span>
-            <span class="item-meta">
-              {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
+          <a class="item-row item-row-full" href="/products/{{ r.id }}">
+            {% if r.image_path %}
+              <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
+            {% else %}
+              <span class="thumb thumb-empty" aria-hidden="true"></span>
+            {% endif %}
+            <span class="item-body">
+              <span class="item-name">{{ r.name }}</span>
+              <span class="item-meta">
+                {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
+              </span>
+            </span>
+            <span class="item-right">
+              {% if r.next_expiry %}
+                {{ r.next_expiry | au_date }}
+                {% if r.live_count > 1 %}<span class="item-meta">+{{ r.live_count - 1 }} more</span>{% endif %}
+              {% else %}
+                <span class="item-meta">nothing tracked</span>
+              {% endif %}
             </span>
           </a>
-          <span class="item-right">
-            {% if r.next_expiry %}
-              {{ r.next_expiry | au_date }}
-              {% if r.live_count > 1 %}<span class="item-meta">+{{ r.live_count - 1 }} more</span>{% endif %}
-            {% else %}
-              <span class="item-meta">nothing tracked</span>
-            {% endif %}
-          </span>
         </li>
       {% endfor %}
     </ul>

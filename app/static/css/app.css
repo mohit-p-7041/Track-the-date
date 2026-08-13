@@ -347,6 +347,10 @@ main { padding-bottom: 3rem; }
 
 .item-row:active { background: #f2f2f5; }
 
+/* The products list has no buttons on its rows, so the link is the whole
+   rectangle rather than sharing it with an actions column. */
+.item-row-full { flex: 1 1 100%; }
+
 .thumb-big { width: 84px; height: 84px; }
 
 .camera-view {
