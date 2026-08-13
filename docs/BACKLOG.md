@@ -227,17 +227,22 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
 
 1. `[ ]` **Discount sheet shows past-date items.** No lower bound on the range, so 83 rows of
    backlog print before this week's. Bound it `>= today`.
-2. `[ ]` **The barcode field accepts typed words.** Reject anything that is not a shape a
-   scanner produces — all digits, or a `]` AIM prefix, or a URL. **Not "digits only": nine real
-   products would fail**, including the gun's own `]C1…` codes and QR codes off the packaging.
-   App-level message plus a `CHECK` constraint as the backstop.
-3. `[ ]` **Swipe to delete a batch on the Due screen.** A mis-scan has no undo today. Deletes the
-   batch for real; never the product, even at zero batches.
+2. `[ ]` **The barcode field accepts typed words.** Digits only, 6–18, after stripping the gun's
+   leading `]xx` AIM identifier. App-level message plus a `CHECK` constraint as the backstop.
+   The migration clears 10 legacy rows that fail it — QR-code URLs and one 40-digit gun misfire —
+   five of which are already duplicates of a properly scanned product.
+3. `[ ]` **Two statuses, and swipe to act.** `pulled` and `sold` are removed; a batch is `active`
+   or `discounted`, and anything else is a real deletion. On the Due screen, **right→left
+   deletes, left→right discounts**. Deleting a past-date item asks nothing; deleting one still in
+   date asks "expires in N days, are you sure?" first. The 583 imported `pulled` rows go — take
+   an Excel export first and keep it. Never deletes the product, even at zero batches.
 4. `[ ]` **Edit toggle on product detail.** Editing controls are always on screen. One Edit
    toggle covering name, category and photo — **including renaming a product**, which is now a
    deliberate decision rather than an open question.
 5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
    with new `edited_by` / `edited_at` columns.
+
+Ideas that aren't scheduled go in `docs/FUTURE-IDEAS.md`, not here.
 
 **HTTPS and camera scanning are done and verified on a real iPad** (13 Aug) — see
 `docs/ITERATION-2.md`.
@@ -306,3 +311,8 @@ Recorded here so it doesn't get re-proposed.
 - Roles or an admin tier — ~10 staff, one shop
 - Email or push alerts — home screen plus the printed sheet
 - Multi-band expiry thresholds — one 7-day window
+- A permanent record of everything pulled or sold — decided against 13 Aug. It only grows, and
+  the shop never used either status. The Excel export is how a snapshot gets kept
+- Deleting a product — batches are deletable, products never are
+
+Open ideas that might still happen live in `docs/FUTURE-IDEAS.md`. This list is the closed ones.

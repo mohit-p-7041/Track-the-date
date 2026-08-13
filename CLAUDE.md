@@ -20,16 +20,21 @@ These were considered and settled. Don't "improve" them into something else.
   `app/static/vendor/`.
 - **Product and Batch are separate.** A Product is a barcode. A Batch is one expiry date for
   that barcode. Photos and category live on the Product so they're stored once.
-- **A product is never deleted; a batch entered by mistake is.** Amended 13 Aug, and the
-  distinction is between an outcome and an error. Resolving a batch — `discounted`, `sold`,
-  `pulled` — still never deletes anything, because that is the waste record. But a batch typed
-  in wrong is not waste, it never existed, and keeping it puts fiction in the waste review, so
-  it is really deleted. Products stay whatever happens, including with no dates left: their name,
-  photo and category can be changed, and there is no delete.
-- **A barcode is whatever a scanner produced, not necessarily digits.** Nine real products carry
-  the gun's `]C1…` AIM prefix or a URL from a QR code on the packaging. Validate the *shape* — all
-  digits, or a `]` prefix, or a URL — to keep typed words out. Never "digits only", and never
-  rewrite what was scanned.
+- **A batch has two endings: discounted, or deleted.** Amended 13 Aug, replacing the four
+  statuses. `status` is `active` or `discounted` — nothing else. Anything else that happens to a
+  batch is a deletion: the row goes, for real. `pulled` and `sold` are gone, because the shop
+  never used either (1757 `active`, 583 `pulled` from the import, zero `sold`, zero `discounted`)
+  and because a record of every item ever removed grows forever on a laptop nobody prunes. Take
+  the Excel export first if a snapshot of history is ever wanted — that is what it is for.
+- **A product is never deleted.** Not by staff, not when its last date goes, not ever. Name,
+  photo and category can all be changed; there is no delete. Only batches are deletable.
+- **Deleting a batch warns only when the item is still good.** Past its date, it is gone with no
+  confirmation — staff are standing at the shelf holding it. Not yet expired, it asks "this
+  expires in N days, are you sure?" first. No JS `confirm()`; reveal the confirmation inline.
+- **A barcode is digits only, 6–18 of them.** Amended 13 Aug. A leading AIM identifier (`]` plus
+  two characters) is stripped as transport noise from the gun; everything else must be digits or
+  it is refused. Typed words are the thing this exists to stop. The ten legacy rows that fail
+  this — QR-code URLs and one 40-digit gun misfire — were cleaned out when the rule landed.
 - **PINs are accountability, not security.** 4 digits, LAN-only app. Don't add password
   complexity rules, lockouts, or session hardening. Do keep the audit trail accurate.
 - **No roles.** ~10 staff, one shop. Everyone can do everything, including adding categories and
@@ -90,6 +95,9 @@ scripts/
   show_address.py print the URL for the iPads
 docs/
   BACKLOG.md      what to build next, in order, with acceptance criteria
+  FUTURE-IDEAS.md wanted eventually, not scheduled — parked, not promised
+  ITERATION-1.md  what the first session built, and the decisions it took
+  ITERATION-2.md  HTTPS and the camera verified; the punch list from the iPad test
   DATA-NOTES.md   what's in the beep export, verified by running the import
   LAPTOP-NOTES.md the shop machine: specs, sleep settings, firewall, backups
   reference/      screenshots of the old app and the laptop, for reference
@@ -125,12 +133,14 @@ explicitly and update it deliberately.
   filter in `app/main.py`. Australian format, never US. The shop is GMT+10.
 - **Don't use `strftime('%-d')`** — that format code doesn't exist on Windows, and this runs on
   Windows. Build day-of-month by hand, as `au_date` does.
-- Batch status is one of `active`, `discounted`, `pulled`, `sold`. Nothing is hard-deleted by
-  default so waste can be reviewed later.
+- Batch status is `active` or `discounted`. There is no third state — a batch that is neither is
+  deleted. See the locked decision above.
 - The unique index `idx_batches_unique_live` is the duplication guard. The app should catch the
   duplicate first and tell the person it's already tracked and when it expires — not surface a
   database error, and not offer to increase a quantity, because there are no quantities. The
-  index is the backstop. Never drop it.
+  index is the backstop. Never drop it. It is partial (`WHERE status IN (...)`) for historical
+  reasons; with only two live statuses left it now covers every row, and that is correct — a
+  deleted batch is gone, so its date is free to be used again with no exclusion needed.
 - Every write that a person initiates records `added_by` / `resolved_by`.
 - **Always open the database via `scripts.init_db.connect()`**, never `sqlite3.connect()`
   directly. `foreign_keys` and `synchronous` are per-connection pragmas — a raw connect silently

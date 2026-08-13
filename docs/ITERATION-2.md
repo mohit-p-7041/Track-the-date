@@ -38,32 +38,32 @@ first staff session most, not by the order they were reported.
 ### 1. The barcode field accepts anything typed into it `[ ]`
 
 Typing words into the barcode field creates a product. Nothing rejects it, and because products
-are never deleted (see item 5) that junk row is permanent.
+are never deleted that junk row is permanent.
 
-**But "numbers only" is the wrong rule, and would break real data.** Nine of the shop's 952
-products have non-numeric barcodes, and all nine are legitimate:
+**Decided 13 Aug: digits only, 6–18 of them**, after stripping a leading AIM identifier (`]` plus
+two characters), which is the gun announcing the symbology rather than part of the code. Nothing
+else is accepted — no URLs, no words, no whitespace.
+
+An earlier draft of this item argued for a looser "any shape a scanner can produce" rule, to
+avoid invalidating the nine non-numeric barcodes in the real data. Checking what those rows
+actually are settled it the other way:
 
 | | |
 |---|---|
-| `]C10118721274620198`, `]C10119300830022554` | the scanner gun's own AIM prefix for GS1-128 |
-| 6 × `https://…` (Bundaberg ×3, Nestlé, qrco.de ×2) | QR codes printed on the packaging |
-| `www.ausbev.com.au` | the same, without the scheme |
+| 5 of the 9 | **already exist a second time under their proper numeric barcode** — Bundaberg ginger beer, bundaberg peach, Cadbury Marvellous Creations, sam's fruit lunch, golden gay time. Someone scanned the marketing QR instead of the barcode and created a duplicate product |
+| 4 of the 9 | have no numeric twin yet — magnum almond, In A Biscuit, Kit Kat Neapolitan 42g, Bundaberg traditional lemonade |
+| plus 1 numeric | `1930083008300830083008300830083008300830` — 40 digits, `1930083` repeating. A gun misfire |
 
-A digits-only constraint makes those products unscannable in the aisle and fails to apply to the
-existing database at all. The rule wanted is **"a shape a scanner can produce"**, not "digits":
+So they are not a category of valid barcode to protect. They are the same data-entry accident
+this item exists to prevent, already in the database. **10 products carrying 15 batches** fail
+the rule — 1% of the catalogue — and the four without a twin come back the next time somebody
+scans the actual barcode on the packet.
 
-- all digits, 6–14 long — covers 940 of 952, and
-- starts with `]` — the AIM identifier the gun emits, or
-- looks like a URL (`http://`, `https://`, `www.`) — a scanned QR code
-
-and reject anything else, in particular anything containing whitespace. `KinderJoy` typed by
-hand fails all three; every real barcode in the database passes.
-
-Enforce it in `app/catalogue.py` so the person gets a plain message, **and** as a `CHECK`
-constraint in `app/schema.sql` as the backstop — the same shape as `idx_batches_unique_live`,
-which is a database guarantee rather than a promise the app remembers to keep. SQLite cannot add
-a constraint to an existing table, so this needs a table rebuild in a migration script, verified
-against a copy of the real database first.
+Build it as: normalise (trim, strip a leading `]xx`), validate in `app/catalogue.py` with a plain
+message, and a `CHECK` constraint in `app/schema.sql` as the backstop, the same way
+`idx_batches_unique_live` backstops the duplicate rule. SQLite cannot add a constraint to an
+existing table, so this is a table rebuild in a migration — which must clear the 10 offending
+products first, or the rebuild fails on them. Back up and take an Excel export before running it.
 
 ### 2. The discount sheet is full of past-date items `[ ]`
 
@@ -86,28 +86,48 @@ that they are not two definitions of the same thing:
 One definition of "due" survives; the sheet is a narrower question asked of it. Cheapest fix on
 this list and the most visible on Saturday.
 
-### 3. Swipe to delete a batch on the Due screen `[ ]`
+### 3. Swipe to act on a batch, and drop two of the four statuses `[ ]`
 
-There is no way to undo a mis-scan. Currently the only route is to resolve it as `pulled`, which
-is a lie — it says waste was reviewed when actually the entry never should have existed.
+The biggest change on the list, and the one that touches the most files. Two parts.
 
-Wanted: swipe a row on the Due screen to delete that batch, removed from the app and from the
-database. **The product itself is never deleted**, even when it has no dates left. A product can
-have its photo, name and category changed; it cannot be removed.
+**Statuses go from four to two.** `active` and `discounted` stay; `pulled` and `sold` are
+removed. A batch now ends one of two ways — it gets a discount sticker, or it is deleted, really
+deleted. The reasoning, from the shop rather than from the design:
 
-**This also amends a locked decision**, and the amendment is narrow. `CLAUDE.md` says nothing is
-hard-deleted so waste can be reviewed later. That stands for *outcomes* — `discounted`, `sold`
-and `pulled` still never delete. It does not stand for *mistakes*: a batch entered in error is
-not waste, and keeping it pollutes the waste review with something that never happened. So:
+- Staff physically remove expired stock from the aisle, and want the same action available in the
+  app in one gesture. Marking something `pulled` and keeping it forever is bookkeeping nobody
+  asked for.
+- That history only grows. Over years, on a shop laptop where nobody will prune it, it is the
+  thing that eventually makes the app slow and the exports unreadable.
+- The data agrees it was never wanted: **1757 `active`, 583 `pulled` (all from the import), zero
+  `sold`, zero `discounted`.** Two of the four statuses have never been used once.
 
-- **Resolve** — a real outcome, recorded, never deleted. Unchanged.
-- **Delete** — an entry that should not exist. Actually removed.
+The 583 imported `pulled` rows are unreachable under the new model and go with it. **Take an
+Excel export first and keep the file** — that is exactly what it was built for, and it is the
+only copy of that history once the migration runs.
 
-Notes for building it: the swipe has to be vanilla JS (no framework, per `CLAUDE.md`) and must
-reveal a Delete control that is then tapped, rather than deleting on the swipe itself — one
-gesture should not be destructive, and the two-step is the iOS-native pattern anyway. It also
-needs a non-touch path, because the laptop has no touchscreen and the same screen is used there.
-No JS `confirm()` dialog.
+**Swipe on the Due screen**, and the directions are set:
+
+| Gesture | Action |
+|---|---|
+| Right → Left | **Delete** the batch |
+| Left → Right | Mark **discounted** |
+
+Deleting warns only when the item is still good:
+
+- **Already past its date** — deleted immediately, no confirmation. Staff are at the shelf with
+  the item in their hand; asking is friction for the most common case there is.
+- **Not yet expired** — asks first: *"This expires in 4 days. Delete it?"* Confirm, then it goes.
+
+Notes for building it: vanilla JS, no framework, and no `confirm()` dialog — reveal the
+confirmation inline in the row. The laptop has no touchscreen and uses the same screen, so both
+actions need a non-swipe path as well. `idx_batches_unique_live` gets simpler as a result: with
+no resolved-but-present rows, a date is free again as soon as the batch is deleted.
+
+Blast radius, checked: `app/routes/products.py`, `app/schema.sql`, `app/templates/product.html`,
+`app/templates/settings.html`, `scripts/check_db.py`, `scripts/export_xlsx.py`,
+`scripts/import_beep.py`, and four files under `tests/`. Not a small change — see the schedule
+note at the end.
 
 ### 4. Product detail should have an edit toggle `[ ]`
 
@@ -148,13 +168,22 @@ tidiness and a better audit trail rather than a capability that is missing.
 Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff session on
 **Sat 15 Aug**. The order is by risk to that Saturday.
 
-| | Item | Why here |
-|---|---|---|
-| 1 | Sheet date range (item 2) | Cheapest fix, and the sheet is the thing staff physically carry |
-| 2 | Barcode shape rule (item 1) | Junk products are permanent; every hour of scanning adds more |
-| 3 | Swipe to delete (item 3) | The first session *will* produce mis-scans, and there is no undo today |
-| 4 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan |
-| 5 | Edit expiry date (item 5) | Do it if Friday has room; item 3 already covers recovery |
+| | Item | Why here | Est. |
+|---|---|---|---|
+| 1 | Sheet date range (item 2) | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
+| 2 | Barcode rule + migration (item 1) | Junk products are permanent; every hour of scanning adds more | 1½ hr |
+| 3 | Statuses + swipe (item 3) | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
+| 4 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
+| 5 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
+
+**That is about six and a half hours against six available, and items 2 and 3 both carry a
+migration against real data.** If Friday runs short, item 5 drops first and item 4 second — both
+are comfort rather than correctness. Items 1–3 are the ones that change what staff can do wrong
+on Saturday, and item 3 is the one to protect time for.
+
+Both migrations delete real rows. Before either: run `scripts/backup.py`, **and** take the Excel
+export and keep the file somewhere off the laptop. Then run against a copy of the database and
+check the numbers before touching `data/tecoma.db`.
 
 Then, unchanged from iteration 1 and still outstanding:
 

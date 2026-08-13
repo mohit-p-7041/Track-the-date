@@ -107,11 +107,25 @@ This matters for three reasons:
 | `settings` | key, value |
 
 `idx_batches_unique_live` is a partial unique index on (product_id, expiry_date) covering only
-`active` and `discounted` rows. That's the duplication guard. Resolved rows are excluded so a
-date can recur once the earlier batch is dealt with.
+`active` and `discounted` rows. That's the duplication guard. With only those two statuses left
+it now covers every row — a date recurs by the earlier batch having been deleted, not by being
+excluded from the index.
 
-Batch `status` is one of `active`, `discounted`, `pulled`, `sold`. Nothing is hard-deleted by
-default, so waste can be reviewed later.
+Batch `status` is `active` or `discounted` — **revised 13 Aug**, down from four. A batch ends one
+of two ways: it gets a discount sticker, or it is deleted. `pulled` and `sold` were removed
+because the shop never used them (1757 `active` and 583 imported `pulled`, zero of each of the
+others) and because keeping every item ever taken off a shelf means a database that only grows,
+on a laptop where nobody will ever prune it. The Excel export is the way to keep a snapshot of
+history before it goes.
+
+Deleting is therefore a normal, frequent action rather than an exception, and it is real: the row
+is removed. It warns first only when the item has not yet expired — see §3.2. **Products are
+never deleted**, including when their last date goes; they keep their name, photo and category so
+the next scan of that barcode still knows what it is.
+
+`barcode` is digits only, 6–18 of them, after a leading AIM identifier (`]` plus two characters)
+is stripped from what the gun sends. Anything else is refused, which is what stops a typed word
+becoming a permanent product.
 
 ### No counting
 
