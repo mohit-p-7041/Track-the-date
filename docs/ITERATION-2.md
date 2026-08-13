@@ -161,6 +161,28 @@ Assessed against the logic flow, and **it does not break it**, provided:
 Lower priority than item 3: delete-and-rescan already recovers from the mistake, so this buys
 tidiness and a better audit trail rather than a capability that is missing.
 
+### Resolved: what happens to a retired account's batches
+
+Asked on 13 Aug, when `sar ob` was taken off the sign-in list: should that account's batches go
+with it? Answer: **keep the ones still in date, delete the expired ones** — and checking the
+numbers, that needs no special handling at all, because it is exactly what item 3's migration
+already does.
+
+`sar ob`'s 50 batches in the real database:
+
+| | |
+|---|---|
+| 32 `active`, still in date | **Kept.** Real stock on the shelf, still tracked, still attributed to `sar ob` |
+| 18 `pulled`, expired | **Deleted** — already inside the 583 `pulled` rows the status migration removes |
+
+So there is no "clean up after a retired user" job to build, and none should be. Taking somebody
+off the sign-in list stops them signing in; it does not touch the shop's record of what is on the
+shelf. Their name stays on the batches they added, which is the point of having PINs.
+
+Worth noting separately: the database has **27 `active` batches already past their date**, none of
+them `sar ob`'s. Those are not touched by any migration — they are the backlog staff clear by
+swiping on Saturday, which is the first real use of item 3.
+
 ### 6. Categories cannot be deleted `[ ]`
 
 Settings can add and rename a category but not remove one. A typo made while scanning is
