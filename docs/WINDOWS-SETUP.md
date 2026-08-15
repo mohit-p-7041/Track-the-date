@@ -83,25 +83,28 @@ Install [Git for Windows](https://git-scm.com/downloads/win), accept every defau
 
 ```powershell
 cd $env:USERPROFILE\Documents
-git clone https://github.com/<you>/Track_the_Date_Tecoma.git
-cd Track_the_Date_Tecoma
+git clone https://github.com/mohit-p-7041/Track-the-date.git
+cd Track-the-date
 ```
 
 `cd` changes folder. `git clone` copies the project down, including its history, so a bad change
 can be undone with one command later.
 
+Note the repository is `Track-the-date` — hyphens, and not the same as the folder name on the
+machine it was written on. Copy the line above rather than typing it from memory.
+
 **Every command from here runs from inside that folder.**
 
-**Check you are on the right branch.** A clone lands you on `main`, and this work may be on
-another one:
+**Check you are on the right branch.** A clone lands you on `main`, which is where the shop's
+version lives:
 
 ```powershell
-git branch --show-current
-git checkout <branch>      # only if the line above is not the branch you want
+git branch --show-current      # expect: main
 ```
 
-Getting this wrong is the confusing kind of wrong — the app runs, but it is an older version of
-it, and none of the files this guide talks about are there.
+If that says anything else, `git checkout main`. Getting this wrong is the confusing kind of
+wrong — the app runs, but it is an older version of it, and none of the files this guide talks
+about are there.
 
 To update the laptop later, from the same folder:
 
