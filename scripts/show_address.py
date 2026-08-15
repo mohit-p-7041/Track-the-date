@@ -1,9 +1,12 @@
-"""Print the address staff should type into an iPad.
+"""Print the address staff should type into an iPad or the scanner phone.
 
-Called by start.bat so nobody has to run ipconfig and read adapter output.
+    python scripts/show_address.py                 # whatever this laptop is set up for
+    python scripts/show_address.py https 8443      # or ask for a specific one
 
-    python scripts/show_address.py                 # http on 8000
-    python scripts/show_address.py https 8443      # once certificates exist
+`start.bat` no longer calls this - scripts/serve.py prints the same addresses
+as it starts. It stays because "what do I type on this new iPad?" is a question
+someone asks with the app already running, and nobody should have to read
+`ipconfig` output to answer it.
 """
 
 from __future__ import annotations
@@ -30,16 +33,42 @@ def lan_ip() -> str | None:
         s.close()
 
 
+def local_name() -> str:
+    """This machine's mDNS name — the address that survives its IP changing.
+
+    Windows answers `<computername>.local` on the network by itself and iOS
+    resolves it natively, so an iPad bookmarked by name keeps working through a
+    DHCP reshuffle that would have broken one bookmarked by number. It is
+    printed *alongside* the IP rather than instead of it because Android does
+    not resolve `.local` — the scanner phone still needs the number. Both are
+    on the certificate for that reason. See docs/WINDOWS-SETUP.md.
+    """
+    return socket.gethostname().split(".")[0].lower() + ".local"
+
+
 def main() -> None:
-    scheme = sys.argv[1] if len(sys.argv) > 1 else "http"
-    port = sys.argv[2] if len(sys.argv) > 2 else "8000"
+    if len(sys.argv) > 1:
+        scheme = sys.argv[1]
+        port = sys.argv[2] if len(sys.argv) > 2 else "8000"
+    else:
+        # Imported here rather than at the top: serve.py imports this module,
+        # and a module-level import back would be a cycle.
+        from scripts.serve import choose
+
+        scheme, port_number = choose()
+        port = str(port_number)
+
     ip = lan_ip()
 
     print()
     print(f"   On this laptop:   {scheme}://localhost:{port}")
 
     if ip:
-        print(f"   On an iPad:       {scheme}://{ip}:{port}")
+        print(f"   On the iPads:     {scheme}://{local_name()}:{port}")
+        print(f"   By address:       {scheme}://{ip}:{port}")
+        print()
+        print("   The Android scanner phone cannot resolve the name. Give it")
+        print("   the address.")
     else:
         print()
         print("   No network address found. The laptop may be offline or on a")
@@ -50,7 +79,7 @@ def main() -> None:
     if scheme == "http":
         print("   Running without certificates. Everything works except the")
         print("   iPad camera — Safari will not open a camera over http from a")
-        print("   network address. Set up mkcert when you need aisle scanning.")
+        print("   network address. Run setup.bat with mkcert installed to fix.")
     else:
         print("   Bookmark that on each iPad and add it to the home screen.")
         print("   If it stops working the address may have changed — reserve")
@@ -59,4 +88,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    import os
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    os.chdir(Path(__file__).resolve().parent.parent)
     main()

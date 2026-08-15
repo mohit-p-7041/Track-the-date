@@ -79,12 +79,23 @@ These were considered and settled. Don't "improve" them into something else.
   app is for; it should never need a trip to the nav bar.
 - **On demand, not always on.** Staff double-click `start.bat` for a scan session (mainly
   weekends) and close the window after. No service, no auto-start. Backups therefore run at
-  startup — a nightly job would never fire.
+  startup — a nightly job would never fire. An opt-in exists and is **off** by default:
+  `python scripts/setup_laptop.py --autostart` drops the same shortcut in the Startup folder,
+  `--no-autostart` takes it out again. Don't make it the default without asking.
+- **One address, and it does not move.** `https://tecoma.local:8443` — a name, a reserved number,
+  and a fixed port, all three, because each covers the others' failures. Every iPad and the
+  scanner phone hold a home-screen icon with that URL baked into it, so a changed port or a
+  DHCP reshuffle is ten devices to walk round on a Saturday. The ports are constants in
+  `scripts/serve.py` with a test asserting them; the certificate is issued for the name *and*
+  the number (iOS resolves `.local`, Android does not); and `serve.py` warns at startup when the
+  certificate has stopped matching the machine, because that failure is otherwise silent and
+  looks like a broken app. Never move a port to dodge a conflict — find what took it.
 
 ## Layout
 
 ```
-start.bat       double-click launcher; picks HTTP or HTTPS automatically
+start.bat       double-click launcher for a session: finds Python, runs scripts/serve.py
+setup.bat       one-time laptop setup, safe to re-run: runs scripts/setup_laptop.py
 app/
   main.py         FastAPI app — wiring only: middleware, mounts, routers
   db.py           get_conn dependency — the only way a route opens the database
@@ -98,17 +109,23 @@ app/
   routes/         one module per area: login, home, scan, products, sheet, settings
   templates/      Jinja2 — base.html and one per screen
   static/         css, js (keypad, photo), vendor
+  static/icons/   the home-screen icon and manifest.json; drawn by make_icons.py
 tests/
   conftest.py     temp-database fixtures; never touches data/tecoma.db or data/photos
   test_screens.py routes render and show the right rows
   test_rules.py   the locked decisions, as executable tests
+  test_serve.py   the launcher: ports, certificate check, refusing to start twice
 data/
   tecoma.db       the database — never commit
   photos/         compressed product images — never commit
   backups/        snapshots written at startup — never commit
   exports/        spreadsheets written by export_xlsx.py — never commit
+  logs/           one file per day from serve.py, kept 14 days — never commit
   imports/        the beep Excel export
 scripts/
+  serve.py        the launcher: scheme, port, log, and the certificate warning
+  setup_laptop.py one-time setup: deps, database, certificate, firewall, desktop icon
+  make_icons.py   draws the home-screen icon; its outputs are committed
   init_db.py      create the database; also holds connect()
   import_beep.py  load the old app's Excel export
   migrate_barcodes.py  one-off: put the barcode CHECK on an existing database
@@ -119,6 +136,9 @@ scripts/
   export_xlsx.py  every batch to one Excel sheet; the settings button calls this
   show_address.py print the URL for the iPads
 docs/
+  WINDOWS-SETUP.md  deploying to the shop laptop: address, certificate, firewall, icon
+  DEVICE-SETUP.md   the iPads and the Android scanner phone, including keyboard-wedge mode
+  STAFF-GUIDE.md    the one-page SOP for the shop — print it, it is for everyone
   BACKLOG.md      what to build next, in order, with acceptance criteria
   FUTURE-IDEAS.md wanted eventually, not scheduled — parked, not promised
   ITERATION-1.md  what the first session built, and the decisions it took
@@ -131,6 +151,11 @@ docs/
 ## Commands
 
 ```bash
+setup.bat                                                    # shop laptop, once (and re-runnable)
+start.bat                                                    # shop laptop, every session
+python scripts/serve.py --http                               # force plain http on 8000
+python scripts/setup_laptop.py --dry-run                     # what setup.bat would change
+python scripts/make_icons.py                                 # redraw the home-screen icon
 pip install -r requirements.txt -r requirements-dev.txt      # dev machine
 pytest                                                       # run before committing
 python scripts/init_db.py                                    # create the database
@@ -232,12 +257,15 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 252 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 291 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
 - `tests/test_screens.py` — routes return 200, render, and show the right rows. This is the layer
   `check_db.py` cannot provide: it catches template errors, wrong queries, off-by-one windows.
+- `tests/test_serve.py` — the launcher, the one piece of this staff touch directly. The ports
+  can't drift, the certificate check still finds an address inside a real certificate, and a
+  second double-click says "already running" rather than throwing a traceback at somebody.
 - `tests/test_rules.py` — the locked decisions as tests. Not "nobody has broken this yet" but
   "this cannot be done": the duplicate guard raises, categories collide case-insensitively,
   `au_date` never emits US format or a leading zero.

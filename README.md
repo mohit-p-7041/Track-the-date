@@ -2,6 +2,14 @@
 
 Expiry tracker for BP Tecoma. Runs on one shop laptop, reachable from iPads on the shop WiFi.
 
+**Putting it in the shop, in order:**
+
+1. `docs/WINDOWS-SETUP.md` — the laptop: Python, a fixed address, the certificate, one desktop icon
+2. `docs/DEVICE-SETUP.md` — the iPads and the Android scanner phone, and the home-screen button
+3. `docs/STAFF-GUIDE.md` — the one-page SOP. Print it and leave it by the counter
+
+**Background:**
+
 - `SPEC.md` — what we're building and why, and the five-day timeline
 - `CLAUDE.md` — working rules, read automatically by Claude Code
 - `docs/ITERATION-1.md` — what the first build session did, and what to do next
@@ -17,23 +25,25 @@ Every screen in `docs/BACKLOG.md` is built and under test:
 - **Scan & add** — gun-driven; scan, type the date, Enter. Duplicates are caught before insert
 - **Due** — past-date first, then the 7-day window, filtered by category
 - **Products** — search that copes with the real names, and a detail screen with every date on a
-  barcode, its history, and discounted / sold / pulled
+  barcode, who added it, and discount / back to full price / delete
+- **Camera scanning** — the aisle half of Scan, on any device that trusts the certificate. A
+  decoded barcode goes into the same field the gun types into, so there is one add path, not two
 - **Photos** — file or camera, shrunk in the browser, then Pillow to 800px and under 80 KB
 - **Discount sheet** — A4, grouped by category, tick box and a blank price column. Two pages for
   a normal week
 - **Settings** — categories, staff PINs, the expiry window, and a backup button
 
-Underneath, unchanged: the schema with the duplicate guard at index level, the importer (952
-products and 2,340 batches from the real beep export), `scripts/backup.py`, and
-`scripts/check_db.py`.
+Underneath: the schema with the duplicate guard at index level, the importer (944 products and
+1,746 batches from the real beep export), `scripts/backup.py`, and `scripts/check_db.py`.
 
-- `pytest` — 122 tests: the screens render, and the locked decisions can't be broken
-- `python scripts/check_db.py` — 12 checks against the real database, 16 with `--expect-import`
+- `pytest` — 291 tests: the screens render, the locked decisions can't be broken, and the
+  launcher staff double-click behaves
+- `python scripts/check_db.py` — 14 checks against the real database, 18 with `--expect-import`
 
-Still to do before the shop relies on it: **set the real staff names and PINs** (both imported
-accounts are still on the placeholder `1234`), the mkcert step for iPad camera access, and the
-first weekend session. Camera *scanning* in the aisles is deliberately not built yet — it needs
-HTTPS to work on an iPad at all, so it belongs with that step.
+Still to do before the shop relies on it: **set the real staff names and PINs**
+(`docs/STAFF-SETUP.md` — both imported accounts are still on the placeholder `1234`), the laptop
+deployment in `docs/WINDOWS-SETUP.md`, the devices in `docs/DEVICE-SETUP.md`, and the first
+weekend session.
 
 > **Where to build:** recommend developing on the Mac and deploying to the shop laptop via git.
 > The laptop runs the app easily, but Claude Code plus a browser plus the app on 8 GB is a slow
@@ -97,6 +107,10 @@ laptop's copy is the real one.
 
 ### 5. Dependencies and database
 
+**On the shop laptop, skip this and the next step — run `setup.bat` instead, and follow
+`docs/WINDOWS-SETUP.md`.** It does all of this plus the certificate, the firewall and the desktop
+icon, and is safe to re-run. What's below is the by-hand equivalent, for a dev machine.
+
 ```powershell
 pip install -r requirements.txt
 python scripts\init_db.py
@@ -116,10 +130,13 @@ The last command should print **All 16 checks passed**. If it doesn't, stop and 
 .\start.bat
 ```
 
-It prints the address for the laptop and for the iPads. On the laptop, open
-`http://localhost:8000`.
+It backs up the database, prints the address for the laptop and for the iPads, and serves. With
+certificates in `certs\` that's `https://<name>.local:8443`; without them, `http://localhost:8000`
+and no camera on any device.
 
 Close the window to stop it. Everything saved is already on disk — there's no shutdown step.
+A second double-click says "already running" rather than failing; a session's log is in
+`data\logs\`.
 
 ---
 
@@ -184,15 +201,22 @@ that a screen renders — without `pytest`, an agent will report success on a pa
 
 ## Going live in the shop
 
-Full detail with exact Windows settings in `docs/LAPTOP-NOTES.md`.
+**Follow `docs/WINDOWS-SETUP.md`** — it is the step-by-step, with every command explained. The
+exact Windows power and update settings are in `docs/LAPTOP-NOTES.md`, and the reasoning behind
+the address in `CLAUDE.md`. The short version:
 
 1. **Stop the laptop idle-sleeping mid-session** — Settings → System → Power & battery → Screen
    and sleep → "When plugged in, put my device to sleep after" → **Never**. During a session
    nobody touches the laptop, so Windows would otherwise sleep it and drop every iPad. Leave the
    lid settings alone; closing the lid is a fine way to finish.
-2. **HTTPS via mkcert** — only needed for iPad camera scanning. Everything else works over HTTP.
-3. **Reserve the laptop's IP** on the router so the iPad bookmarks survive between sessions.
-4. **Copy `data/backups` off the machine** — they run automatically at startup but land on the
+2. **Pin the address before touching any device** — a `.local` name, a reserved IP, and the fixed
+   port. Every home-screen icon has it baked in, and `setup.bat` issues the certificate for
+   whatever the address is at the time.
+3. **`setup.bat`, as administrator** — dependencies, database, certificate, firewall, desktop
+   icon. Safe to re-run, and the thing to re-run whenever the address changes.
+4. **Then the devices** — `docs/DEVICE-SETUP.md`. The certificate has to be trusted on each one,
+   and that step has two halves on iOS.
+5. **Copy `data/backups` off the machine** — they run automatically at startup but land on the
    same disk as the original.
 
 ---
