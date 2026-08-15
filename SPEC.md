@@ -264,12 +264,22 @@ Photos can't come across in an Excel export. They rebuild naturally, one per bar
 
 The whole system is one `.db` file plus a `photos/` folder, which makes backup trivial.
 
-`scripts/backup.py` runs automatically every time `start.bat` starts the app:
+`scripts/backup.py` runs automatically when the app starts, **and every two hours while it is
+running** — a session that opens at nine and runs until three was otherwise backed up as it stood
+at nine.
 
 - Snapshots the database using SQLite's own backup API, so it's safe even while the app is
   serving requests.
-- Copies photos that are new or changed, so it stays cheap after the first run.
-- Keeps the last 7 snapshots. The database is around 450 KB, so seven copies cost about 3 MB.
+- Copies photos that are new or changed, into one shared folder rather than one per snapshot, so
+  it stays cheap after the first run.
+- **Keeps the last 2 snapshots**, and takes each one's `-wal` / `-shm` with it when it goes.
+  Changed from 7 on 15 Aug at the shop's request: the folder was not to pile up.
+
+Know what the 2 costs. With the two-hourly rhythm both snapshots are usually from the current
+session, so the oldest state you can return to is a couple of hours old — a mistake noticed the
+next day has no snapshot from before it. The database is around 550 KB, so the number is not
+about disk space; it is about a folder somebody can look at and understand. `KEEP` in
+`scripts/backup.py` is the one place to change it.
 
 **These land on the same disk as the original.** That protects against a mistake, not a dead
 drive. Copy `data/backups` to OneDrive or a USB stick. Test a restore before trusting it.

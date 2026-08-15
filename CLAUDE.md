@@ -132,7 +132,7 @@ scripts/
   migrate_statuses.py  one-off: four statuses to two, and drop products.created_by
   migrate_edit_columns.py  one-off: add batches.edited_by / edited_at (additive)
   check_db.py     sanity checks — run these
-  backup.py       snapshot db + photos, keep last 7
+  backup.py       snapshot db + photos; keeps 2, sidecars included
   export_xlsx.py  every batch to one Excel sheet; the settings button calls this
   show_address.py print the URL for the iPads
 docs/

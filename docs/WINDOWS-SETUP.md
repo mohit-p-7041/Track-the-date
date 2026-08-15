@@ -361,10 +361,11 @@ Work down this list. It is in order of how often each one is actually the proble
 anything that crashed. Kept for a fortnight. It is the only way to answer "what happened on
 Saturday" on the Monday, so send that file rather than describing the symptom.
 
-**Getting back to a working state.** Backups run automatically at every startup into
-`data\backups\`, and the last seven are kept. `docs/LAPTOP-NOTES.md` has how to check one is
-readable — and it is worth copying that folder to OneDrive or a USB stick occasionally, because
-those backups are on the same disk as the original.
+**Getting back to a working state.** Backups run into `data\backups\` at every startup and every
+two hours after that, and **the two most recent are kept** — so the furthest back you can go is
+usually a couple of hours. `docs/LAPTOP-NOTES.md` has how to check one is readable, and how to
+keep more than two if that turns out to be too short. Copy that folder to OneDrive or a USB stick
+occasionally either way: those snapshots are on the same disk as the original.
 
 ---
 

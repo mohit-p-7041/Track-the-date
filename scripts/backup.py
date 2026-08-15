@@ -3,9 +3,10 @@
     python scripts/backup.py              # run a backup, print what happened
     python scripts/backup.py --quiet      # only speak up if something is wrong
 
-Called automatically by start.bat every time the app comes up. That timing is
-deliberate: the shop laptop is not on overnight, so a scheduled 2am backup
-would simply never run.
+Called automatically when the app comes up, and every two hours while it is up
+— see `start_periodic_backup()` in scripts/serve.py. That timing is deliberate:
+the shop laptop is not on overnight, so a scheduled 2am job would simply never
+run, and the backup has to happen inside the session or not at all.
 
 The database is copied with SQLite's own backup API rather than a file copy,
 so it is safe to run even while the app is serving requests. Photos are copied
@@ -28,7 +29,16 @@ from scripts.init_db import DB_PATH, connect  # noqa: E402
 
 BACKUP_DIR = ROOT / "data" / "backups"
 PHOTO_DIR = ROOT / "data" / "photos"
-KEEP = 7
+
+# Two, decided 15 Aug, down from seven: the shop wanted the folder not to pile
+# up. Photos are mirrored into one shared folder rather than copied per
+# snapshot, so this is only ever about the .db files — about 550 KB each.
+#
+# Know what it costs. Two snapshots plus the two-hourly rhythm in serve.py
+# means the oldest one you can go back to is a couple of hours old, so a
+# mistake noticed the next day has no snapshot from before it. That is the
+# trade for a tidy folder, and it is a one-word change here if it ever bites.
+KEEP = 2
 
 
 def backup_database(stamp: str, db_path: Path = DB_PATH,
@@ -68,12 +78,29 @@ def backup_photos(photo_dir: Path = PHOTO_DIR, backup_dir: Path = BACKUP_DIR) ->
 
 
 def prune(keep: int = KEEP, backup_dir: Path = BACKUP_DIR) -> int:
-    """Keep the most recent N database snapshots."""
+    """Keep the most recent N database snapshots, and nothing else.
+
+    A snapshot can leave a `-wal` and a `-shm` beside it — SQLite's backup API
+    copies the journal mode across, and if the laptop is closed mid-write those
+    two are still there next time. Deleting the `.db` and walking away from its
+    sidecars is how a folder asked to hold two files ends up holding six, so
+    they go with it, and any orphan left by an earlier run goes too.
+
+    Only `.db` files are counted in the number returned. They are the backups;
+    the rest is bookkeeping.
+    """
     snaps = sorted(backup_dir.glob("tecoma-*.db"), key=lambda p: p.stat().st_mtime)
     removed = 0
     for old in snaps[:-keep] if len(snaps) > keep else []:
         old.unlink()
         removed += 1
+
+    live = {p.name for p in backup_dir.glob("tecoma-*.db")}
+    for suffix in ("-wal", "-shm"):
+        for sidecar in backup_dir.glob(f"tecoma-*.db{suffix}"):
+            # "tecoma-2026-08-13_1646.db-wal" -> "tecoma-2026-08-13_1646.db"
+            if sidecar.name.rsplit("-", 1)[0] not in live:
+                sidecar.unlink(missing_ok=True)
     return removed
 
 

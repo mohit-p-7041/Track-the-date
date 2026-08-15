@@ -132,13 +132,19 @@ If you'd rather keep everything on the one machine, that also works. It'll just 
 Everything that matters is `data/tecoma.db` and `data/photos/`. Nothing else on this laptop is
 irreplaceable.
 
-`scripts/backup.py` runs automatically every time `start.bat` brings the app up. It takes a
-consistent snapshot of the database (safe even while the app is serving), copies any new photos,
-and keeps the last 7 snapshots. The database is around 450 KB, so seven copies cost about 3 MB.
+`scripts/backup.py` runs when `start.bat` brings the app up, **and again every two hours while it
+is running**. It takes a consistent snapshot of the database (safe even while the app is serving)
+and copies any new photos into one shared folder.
+
+**It keeps two snapshots**, and deletes each one's `-wal` / `-shm` alongside it. Changed from
+seven on 15 Aug because the folder was to stay small enough to read at a glance. The cost of two:
+both are usually from the current session, so the furthest back you can go is a couple of hours —
+a mistake spotted the following week has no snapshot from before it. `KEEP` in
+`scripts/backup.py` is the single place to change that.
 
 **Those backups sit on the same disk as the original**, which protects you from a mistake but not
-from a dead drive or a stolen laptop. Copy `data/backups` to OneDrive or a USB stick. A
-single-machine setup with no off-machine copy is one hardware failure away from starting over.
+from a dead drive or a stolen laptop. Copying `data/backups` to OneDrive or a USB stick now and
+then is the only thing that does.
 
 Test a restore before you trust it. An untested backup is a guess. To check one:
 

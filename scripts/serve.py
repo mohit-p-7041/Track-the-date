@@ -29,16 +29,18 @@ import argparse
 import base64
 import copy
 import datetime as dt
+import logging
 import os
 import re
 import socket
-import subprocess
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from scripts import backup  # noqa: E402  (stdlib only, so a missing pip install can't break it)
 from scripts.show_address import lan_ip, local_name  # noqa: E402,F401  (re-exported)
 
 CERT = ROOT / "certs" / "cert.pem"
@@ -55,6 +57,12 @@ HTTP_PORT = 8000
 # is well under a megabyte. Long enough to still have last weekend's when
 # somebody mentions it on the Tuesday.
 LOG_KEEP_DAYS = 14
+
+# Backing up only at startup means a session that runs nine until three is
+# backed up as it stood at nine. Two hours suits the shape of a scan session:
+# a snapshot as it opens, another mid-session, and with backup.KEEP at two that
+# is exactly what survives.
+BACKUP_EVERY_SECONDS = 2 * 60 * 60
 
 
 # --------------------------------------------------------------------------
@@ -159,22 +167,64 @@ def choose(force_http: bool = False, port: int | None = None) -> tuple[str, int]
     return scheme, port or (HTTPS_PORT if https else HTTP_PORT)
 
 
-def run_backup() -> None:
-    """Snapshot the database before serving from it.
+def snapshot(when: str) -> None:
+    """Take one backup. Never raises, whatever happens.
 
-    At startup rather than overnight: the laptop is off overnight, so a
-    scheduled job would never fire. A failure here is printed and stepped over
-    — a missing backup is not a reason to keep the shop from working.
+    A missing backup is not a reason to keep the shop from working, so every
+    failure here is reported and stepped over.
+
+    `when` decides only where it is reported. At startup nothing is configured
+    to log yet, so a problem is printed for whoever is standing at the laptop;
+    once the server is up the log file is the right place for a routine
+    snapshot, and the console belongs to the address.
     """
     try:
-        subprocess.run(
-            [sys.executable, str(ROOT / "scripts" / "backup.py"), "--quiet"],
-            cwd=ROOT,
-            timeout=120,
-            check=False,
+        result = backup.run()
+    except Exception as exc:                              # noqa: BLE001
+        message = f"Backup failed at {when}: {exc}. The app is still running."
+        print(f"   {message}")
+        logging.getLogger("uvicorn.error").warning(message)
+        return
+    if when != "startup":
+        logging.getLogger("uvicorn.error").info(
+            "Backup taken: %s (%.0f KB), %d old snapshot(s) removed",
+            result["file"].name, result["size"] / 1024, result["removed"],
         )
-    except (OSError, subprocess.SubprocessError) as exc:
-        print(f"   Backup skipped: {exc}")
+
+
+def start_periodic_backup(
+    seconds: float | None = None,
+    stop: threading.Event | None = None,
+) -> threading.Thread:
+    """Keep snapshotting while the app is up.
+
+    A backup only at startup means a session that runs from nine until three is
+    backed up as it was at nine. This adds one every couple of hours, which
+    with `backup.KEEP` at two leaves the shop with the current state and the
+    one before it.
+
+    A daemon thread on purpose: closing the console window has to stop the app
+    dead, and a non-daemon thread sleeping on a two-hour timer would keep the
+    process alive after uvicorn had gone.
+
+    It waits on an event rather than sleeping, so it can be stopped on demand.
+    Nothing in the app ever sets it — the process ending is what stops this in
+    the shop — but a test that could not stop the loop would be a test leaving
+    a thread behind it, backing up the real database every few milliseconds for
+    the rest of the run.
+    """
+    # Read here rather than as a default argument, which would freeze the
+    # interval at import and quietly ignore anything that set it afterwards.
+    every = BACKUP_EVERY_SECONDS if seconds is None else seconds
+    stopping = stop or threading.Event()
+
+    def loop() -> None:
+        while not stopping.wait(every):
+            snapshot("the two-hourly backup")
+
+    thread = threading.Thread(target=loop, daemon=True, name="ttd-backup")
+    thread.start()
+    return thread
 
 
 def log_file() -> Path:
@@ -285,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if not args.no_backup:
-        run_backup()
+        snapshot("startup")
 
     warning = cert_warning(cert_names(CERT), ip, host) if scheme == "https" else None
     # flush: uvicorn's logging writes to the same stream through its own
@@ -299,6 +349,11 @@ def main(argv: list[str] | None = None) -> int:
         print("   The app's dependencies are not installed. Run setup.bat, or:\n")
         print("     pip install -r requirements.txt\n")
         return 1
+
+    # Started after the import above, so a laptop with no dependencies installed
+    # exits on the message rather than leaving a thread behind it.
+    if not args.no_backup:
+        start_periodic_backup()
 
     uvicorn.run(
         "app.main:app",

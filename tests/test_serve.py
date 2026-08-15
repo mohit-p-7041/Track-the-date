@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import socket
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -30,7 +31,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts import serve  # noqa: E402
+from scripts import backup, serve  # noqa: E402
 
 # A subjectAltName as it sits in the DER: tag, length, value. Written out by
 # hand so the test knows what a real certificate looks like without needing
@@ -237,6 +238,118 @@ def test_the_log_gets_the_requests_as_well_as_the_console(tmp_path):
     assert "file" in config["loggers"]["uvicorn.access"]["handlers"]
     assert "default" in config["loggers"]["uvicorn"]["handlers"]   # console kept
     assert "file" in config["root"]["handlers"]                    # app tracebacks
+
+
+# ----------------------------------------------------------------- backups
+# Two files, taken every couple of hours while the app is up. The shop asked
+# for a folder that does not pile up; what follows is that decision held in
+# place, and the thread that does it not outliving the window it started in.
+
+def test_only_two_snapshots_are_kept():
+    """Changed from seven on 15 Aug, at the shop's request. It is a decision,
+    not an implementation detail, so it is asserted rather than assumed."""
+    assert backup.KEEP == 2
+
+
+def test_pruning_keeps_the_two_newest_and_deletes_the_rest(tmp_path):
+    import os
+
+    for n in range(5):
+        snap = tmp_path / f"tecoma-2026-08-1{n}_0900.db"
+        snap.write_text(str(n))
+        os.utime(snap, (1_700_000_000 + n * 60, 1_700_000_000 + n * 60))
+
+    removed = backup.prune(keep=backup.KEEP, backup_dir=tmp_path)
+
+    left = sorted(p.name for p in tmp_path.glob("tecoma-*.db"))
+    assert removed == 3
+    assert left == ["tecoma-2026-08-13_0900.db", "tecoma-2026-08-14_0900.db"]
+
+
+def test_a_deleted_snapshot_takes_its_sidecars_with_it(tmp_path):
+    """Found on the real folder: two files were kept and four were left behind.
+
+    SQLite's backup API copies the journal mode, so a snapshot can have a -wal
+    and a -shm beside it. Deleting only the .db is how a folder asked to hold
+    two files ends up holding six.
+    """
+    import os
+
+    # Its own folder: the autouse photo fixture already put a directory in
+    # tmp_path, and this test asserts on everything left behind.
+    backups = tmp_path / "backups"
+    backups.mkdir()
+
+    for n in range(3):
+        snap = backups / f"tecoma-2026-08-1{n}_0900.db"
+        snap.write_text(str(n))
+        os.utime(snap, (1_700_000_000 + n * 60, 1_700_000_000 + n * 60))
+        for suffix in ("-wal", "-shm"):
+            (backups / (snap.name + suffix)).write_text("")
+
+    # And one left behind by some earlier run, with no snapshot at all.
+    (backups / "tecoma-2026-01-01_0900.db-wal").write_text("")
+
+    backup.prune(keep=2, backup_dir=backups)
+
+    assert sorted(p.name for p in backups.iterdir()) == [
+        "tecoma-2026-08-11_0900.db",
+        "tecoma-2026-08-11_0900.db-shm",
+        "tecoma-2026-08-11_0900.db-wal",
+        "tecoma-2026-08-12_0900.db",
+        "tecoma-2026-08-12_0900.db-shm",
+        "tecoma-2026-08-12_0900.db-wal",
+    ]
+
+
+def test_the_backup_thread_never_holds_the_window_open():
+    """Closing the console has to stop the app dead. A non-daemon thread on a
+    two-hour timer would keep the process alive with no window to see it in."""
+    stop = threading.Event()
+    thread = serve.start_periodic_backup(seconds=60, stop=stop)
+    try:
+        assert thread.daemon is True
+        assert thread.is_alive()
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()          # and it stops when told
+
+
+def test_it_keeps_backing_up_while_the_app_runs(monkeypatch):
+    """The whole point of the change: a session that opens at nine and runs to
+    three used to be backed up as it stood at nine.
+
+    The interval is turned down through the module constant rather than the
+    argument, deliberately. It was a default argument to begin with, which
+    froze it at import — so setting it did nothing, and the check that was
+    supposed to prove this works sat there passing on a thread that never woke
+    up.
+    """
+    taken = threading.Event()
+    monkeypatch.setattr(serve, "BACKUP_EVERY_SECONDS", 0.01)
+    monkeypatch.setattr(backup, "run", lambda *a, **k: taken.set() or {
+        "file": Path("tecoma-test.db"), "size": 1, "copied": 0, "skipped": 0, "removed": 0,
+    })
+
+    stop = threading.Event()
+    thread = serve.start_periodic_backup(stop=stop)
+    try:
+        assert taken.wait(timeout=5), "no backup was taken"
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+
+
+def test_a_failed_backup_does_not_take_the_app_down(monkeypatch, capsys):
+    """Never the reason the shop cannot work. It says so and carries on."""
+    def explode(*a, **k):
+        raise OSError("the disk is full")
+
+    monkeypatch.setattr(backup, "run", explode)
+    serve.snapshot("startup")             # must not raise
+
+    assert "Backup failed" in capsys.readouterr().out
 
 
 # --------------------------------------------------------------- the launchers
