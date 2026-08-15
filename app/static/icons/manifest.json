@@ -1,0 +1,14 @@
+{
+  "name": "Track the Date",
+  "short_name": "Track the Date",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#00693c",
+  "theme_color": "#00693c",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

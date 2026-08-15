@@ -10,6 +10,7 @@ lists the acceptance criteria each one has to meet.
 
 from __future__ import annotations
 
+import pytest
 from conftest import STAFF_NAME, STAFF_PIN, days
 
 
@@ -121,11 +122,19 @@ def test_home_hides_items_beyond_the_window(client, sample, db):
     assert _au(far_off) not in body
 
 
-def test_home_hides_resolved_batches(client, sample, db):
-    resolved = db.execute(
-        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+def test_home_shows_a_discounted_batch(client, sample, db):
+    """Inverted 13 Aug, and this is the point of the status change.
+
+    This used to assert the resolved batch was hidden, because 'pulled' and
+    'sold' meant gone-but-recorded. Both are removed: a discounted batch is
+    still on the shelf, still needs watching, and is the only resolution left.
+    A batch that is genuinely finished with is deleted, and a deleted row cannot
+    be hidden because it does not exist.
+    """
+    discounted = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["discounted"],)
     ).fetchone()[0]
-    assert _au(resolved) not in client.get("/").text
+    assert _au(discounted) in client.get("/").text
 
 
 def test_home_includes_the_window_edge(client, sample, db):
@@ -158,9 +167,86 @@ def test_uncategorised_product_renders_blank(client, sample):
 
 
 def test_home_counts_only_live_batches(client, sample):
-    """3 products; 4 live batches (the pulled one does not count)."""
+    """3 products; all 5 batches are live now that discounted is the only
+    resolution — there is no status that means present-but-not-counted."""
     body = client.get("/").text
-    assert "3 products, 4 being tracked" in body
+    assert "3 products, 5 being tracked" in body
+
+
+def test_every_due_row_has_buttons_for_both_actions(client, sample):
+    """Buttons, not gestures — swipe was removed on 13 Aug after the iPad test.
+
+    A gesture whose threshold a person cannot see is a guess, and the two guesses
+    were "delete" and "discount". The buttons say what they do.
+    """
+    body = client.get("/").text
+    # Four rows are on the page: overdue, +2, +7 and the discounted +1. The +30
+    # batch is outside the window, so it is not here to be acted on.
+    assert body.count("/delete") == 4                   # every row shown
+    assert body.count('value="discounted"') == 3        # not the already-discounted one
+    assert body.count("/full-price") == 1               # only the discounted one
+    assert 'value="/"' in body                          # comes back to the Due screen
+
+
+def test_the_due_screen_needs_no_javascript(client, sample):
+    """It is the busiest read-only screen in the shop, and now carries no script.
+
+    The delete confirmation used to be built by swipe.js. It is a <details> the
+    server chooses to render, so the rule lives in needs_confirmation() and there
+    is no script that could disagree with it — or fail to load and take the
+    confirmation with it.
+    """
+    body = client.get("/").text
+    assert "<script" not in body
+    assert "swipe.js" not in body
+    assert client.get("/static/js/swipe.js").status_code == 404
+
+
+def test_the_delete_confirmation_is_only_on_rows_that_need_asking(client, sample, db):
+    """Live batches in `sample`: overdue (past, active), due_soon (+2, active),
+    due_edge (+7, active), outside (+30, beyond the window so not shown),
+    discounted (+1). Of the four on the page, only the two in-date active ones
+    ask — the past-date one does not, and neither does the discounted one.
+    """
+    body = client.get("/").text
+    assert body.count('<details class="confirm">') == 2
+    collapsed = " ".join(body.split())
+    assert "This expires in 2 days. Delete it?" in collapsed
+    assert "This expires in 7 days. Delete it?" in collapsed
+
+
+@pytest.mark.parametrize("path,expected_class", [
+    ("/", 'class="item-row"'),                       # Due: shares the row with buttons
+    ("/products", 'class="item-row item-row-full"'),  # Products: no buttons, whole row
+])
+def test_tapping_a_row_covers_the_thumbnail(client, sample, path, expected_class):
+    """The picture is the first thing a thumb reaches, and it did nothing before.
+
+    The link used to wrap only the words, leaving the thumbnail outside it. Fixed
+    on the Due screen on 13 Aug and on the products list straight after, because
+    fixing one and not the other is exactly the kind of thing a parametrised test
+    would have caught the first time.
+    """
+    body = client.get(path).text
+    assert expected_class in body, path
+
+    # Sliced from the opening <a> rather than from the <li>: everything between
+    # the two contains the thumbnail whether or not the link wraps it, so the
+    # wider slice passes against the bug it is meant to catch.
+    link = body.split('<a class="item-row')[1].split("</a>")[0]
+    assert "thumb" in link, f"{path}: the thumbnail is outside the link again"
+
+    css = client.get("/static/css/app.css").text
+    assert ".item-row {" in css
+
+
+def test_the_products_row_link_reaches_the_date_column_too(client, sample):
+    """Nothing on this row needs to stay outside the link, so nothing does."""
+    body = client.get("/products").text
+    link = body.split('class="item-row item-row-full"')[1].split("</a>")[0]
+    assert "item-body" in link
+    assert "item-right" in link, "the date column is outside the tap target"
+    assert ".item-row-full" in client.get("/static/css/app.css").text
 
 
 def test_photo_placeholder_when_no_image(client, sample):
@@ -220,6 +306,52 @@ def test_unknown_barcode_asks_for_a_name(client, sample):
     assert 'id="expiry"' in body
 
 
+def test_a_typed_word_is_refused_and_creates_nothing(client, db):
+    """The punch-list bug itself. Products are never deleted, so junk is forever."""
+    before = db.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "cool ridge water", "name": "Cool Ridge Water 600ml",
+              "expiry_date": days(10)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200            # re-rendered with the reason
+    assert "digits only" in response.text
+    assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == before
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == 0
+
+
+def test_an_invalid_barcode_never_opens_the_new_product_form(client):
+    """Nobody should type a name for something that will be refused on save."""
+    body = client.get("/scan?barcode=cool ridge water").text
+    assert "digits only" in body
+    assert 'id="name"' not in body
+    assert 'id="barcode"' in body                 # back to step one, ready to rescan
+
+
+def test_a_barcode_of_the_wrong_length_says_the_length(client, db):
+    response = client.post(
+        "/scan/add", data={"barcode": "12345", "name": "Too Short", "expiry_date": days(10)}
+    )
+    assert "6 to 18 digits" in response.text
+    assert "That one is 5" in response.text
+    assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0
+
+
+def test_a_gun_prefixed_new_barcode_is_stored_without_the_prefix(client, db, staff):
+    """The stored barcode is the code, not the gun's announcement of it."""
+    client.post(
+        "/scan/add",
+        data={"barcode": "]C10118721274620198", "name": "Golden Gay Time Lamington",
+              "expiry_date": days(12)},
+    )
+    row = db.execute(
+        "SELECT barcode FROM products WHERE name = 'Golden Gay Time Lamington'"
+    ).fetchone()
+    assert row is not None, "the add was refused"
+    assert row["barcode"] == "0118721274620198"
+
+
 def test_adding_writes_a_batch_stamped_with_the_signed_in_user(client, sample, db, staff):
     response = client.post(
         "/scan/add",
@@ -245,13 +377,17 @@ def test_adding_an_unknown_barcode_creates_the_product_too(client, db, staff):
               "expiry_date": days(20)},
     )
     product = db.execute(
-        "SELECT id, name, category_id, created_by FROM products WHERE barcode = ?",
+        "SELECT id, name, category_id FROM products WHERE barcode = ?",
         ("9300600000123",),
     ).fetchone()
     assert product is not None
     assert product["name"] == "Solo Energy Lemon 500ml"
     assert product["category_id"] is None      # no category is a normal state
-    assert product["created_by"] == staff["id"]
+
+    # The person is recorded on the batch, not on the product — dropped 13 Aug.
+    assert db.execute(
+        "SELECT added_by FROM batches WHERE product_id = ?", (product["id"],)
+    ).fetchone()["added_by"] == staff["id"]
     assert db.execute(
         "SELECT COUNT(*) FROM batches WHERE product_id = ?", (product["id"],)
     ).fetchone()[0] == 1
@@ -296,18 +432,46 @@ def test_a_duplicate_still_keeps_the_category_that_was_typed(client, sample, db)
     ).fetchone()[0] == "Water"
 
 
-def test_a_date_freed_up_by_a_resolved_batch_is_accepted(client, sample, db):
-    """The pulled batch on that date is history. The date can come round again."""
-    freed = db.execute(
-        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+def test_a_discounted_batch_still_blocks_its_date(client, sample, db):
+    """Rewritten 13 Aug. A discounted batch is live, so the date is taken.
+
+    The old version used the 'pulled' batch to prove a resolved date came free
+    again. Nothing is resolved-but-present any more, so the only live status
+    besides active is 'discounted' — and that item is on the shelf, so recording
+    it twice is the duplicate this app exists to prevent.
+    """
+    taken = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["discounted"],)
     ).fetchone()[0]
+
+    response = client.post(
+        "/scan/add",
+        data={"barcode": "9300601111111", "expiry_date": taken},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200            # refused, re-rendered
+    assert "Already tracked" in response.text
+
+
+def test_deleting_a_batch_frees_its_date(client, sample, db):
+    """Deletion is what frees a date now, and it frees it immediately.
+
+    This is why idx_batches_unique_live can stay partial and still be correct:
+    with no resolved-but-present rows, the deleted batch is simply not there.
+    """
+    batch_id = sample["batches"]["discounted"]
+    freed = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (batch_id,)
+    ).fetchone()[0]
+
+    client.post(f"/products/{sample['products']['curly']}/batches/{batch_id}/delete")
 
     response = client.post(
         "/scan/add",
         data={"barcode": "9300601111111", "expiry_date": freed},
         follow_redirects=False,
     )
-    assert response.status_code == 303
+    assert response.status_code == 303, "the freed date was still blocked"
     assert db.execute(
         "SELECT COUNT(*) FROM batches WHERE product_id = ? AND expiry_date = ? "
         "AND status = 'active'",
@@ -474,15 +638,21 @@ def test_product_list_filters_by_category(client, sample):
 
 
 def test_product_list_sorts_by_soonest_expiry(client, sample):
-    """Monster is 4 days overdue, the water is due in 2, the Tim Tams in 7."""
+    """Monster is 4 days overdue, the Tim Tams have a discounted date tomorrow,
+    the water is due in 2.
+
+    The Tim Tams moved ahead of the water on 13 Aug: their day-1 batch is
+    `discounted` rather than `pulled`, so it counts as live and is now their
+    soonest date. That is the status change working, not the sort breaking.
+    """
     body = client.get("/products").text
-    assert body.index("Monster Ultra Zero") < body.index("C/RIDGE WATER") < body.index("Tim Tam")
+    assert body.index("Monster Ultra Zero") < body.index("Tim Tam") < body.index("C/RIDGE WATER")
 
 
 def test_product_detail_shows_every_batch_and_who_added_them(client, sample):
     body = client.get(f"/products/{sample['products']['curly']}").text
-    assert _au(days(7)) in body        # live
-    assert _au(days(1)) in body        # pulled — history stays visible
+    assert _au(days(7)) in body        # active
+    assert _au(days(1)) in body        # discounted — still on the shelf
     assert "Mohit" in body             # the audit trail, not the signed-in user
 
 
@@ -494,22 +664,27 @@ def test_resolving_a_batch_records_who_and_when(client, sample, db, staff):
     batch = sample["batches"]["due_soon"]
     response = client.post(
         f"/products/{sample['products']['shouty']}/batches/{batch}",
-        data={"status": "pulled"},
+        data={"status": "discounted"},
         follow_redirects=False,
     )
     assert response.status_code == 303
     row = db.execute(
         "SELECT status, resolved_by, resolved_at FROM batches WHERE id = ?", (batch,)
     ).fetchone()
-    assert row["status"] == "pulled"
+    assert row["status"] == "discounted"
     assert row["resolved_by"] == staff["id"]
     assert row["resolved_at"] is not None
 
 
-def test_a_resolved_batch_leaves_the_due_list(client, sample):
+def test_only_deleting_takes_a_batch_off_the_due_list(client, sample):
+    """Rewritten 13 Aug. This used to mark the batch 'sold'.
+
+    No status removes anything from the worklist any more — 'discounted' stays
+    on it, because the item is still on the shelf. Deletion is the only way off,
+    and it is a real delete.
+    """
     batch = sample["batches"]["due_soon"]
-    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}",
-                data={"status": "sold"})
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/delete")
     assert "C/RIDGE WATER 1L" not in client.get("/").text
 
 
@@ -521,24 +696,324 @@ def test_a_discounted_batch_is_still_on_the_shelf(client, sample, db):
     assert "C/RIDGE WATER 1L" in client.get("/").text
 
 
-def test_nothing_is_hard_deleted(client, sample, db):
+def test_deleting_a_batch_really_deletes_it(client, sample, db):
+    """The reverse of what this file asserted until 13 Aug.
+
+    `test_nothing_is_hard_deleted` used to live here and guarded the opposite
+    rule. The shop decided against keeping a record of everything ever removed:
+    it only grows, on a laptop nobody prunes, and neither status that did it was
+    ever used once. The Excel export is where a snapshot gets kept.
+    """
+    batch = sample["batches"]["due_soon"]
     before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
-    client.post(f"/products/{sample['products']['shouty']}/batches/"
-                f"{sample['batches']['due_soon']}", data={"status": "pulled"})
-    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/delete")
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before - 1
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE id = ?", (batch,)).fetchone()[0] == 0
 
 
-def test_an_unknown_resolution_is_refused(client, sample):
+def test_the_product_survives_deleting_its_last_batch(client, sample, db):
+    """A product is never deleted. Not by staff, not at zero batches, not ever."""
+    product = sample["products"]["shouty"]
+    for batch in db.execute(
+        "SELECT id FROM batches WHERE product_id = ?", (product,)
+    ).fetchall():
+        client.post(f"/products/{product}/batches/{batch['id']}/delete")
+
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE product_id = ?",
+                      (product,)).fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == 1
+    assert client.get(f"/products/{product}").status_code == 200
+
+
+@pytest.mark.parametrize("status", ["binned", "pulled", "sold"])
+def test_an_unknown_resolution_is_refused(client, sample, status):
+    """'pulled' and 'sold' are unknown statuses now, not merely unused ones."""
     response = client.post(
         f"/products/{sample['products']['shouty']}/batches/{sample['batches']['due_soon']}",
-        data={"status": "binned"},
+        data={"status": status},
     )
     assert response.status_code == 400
 
 
+def test_a_discounted_batch_can_go_back_to_full_price(client, sample, db):
+    """Added 13 Aug: discounting is one tap, so people will do it to the wrong row.
+
+    Not a deletion — the item is still on the shelf, just not marked down.
+    """
+    batch = sample["batches"]["discounted"]
+    response = client.post(
+        f"/products/{sample['products']['curly']}/batches/{batch}/full-price",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    row = db.execute(
+        "SELECT status, resolved_by, resolved_at FROM batches WHERE id = ?", (batch,)
+    ).fetchone()
+    assert row["status"] == "active"
+    # resolved_by means "who discounted this", so a batch nobody discounted has
+    # nobody against it.
+    assert row["resolved_by"] is None
+    assert row["resolved_at"] is None
+
+
+def test_going_back_to_full_price_keeps_the_batch(client, sample, db):
+    """It is an undo of the discount, not of the batch."""
+    batch = sample["batches"]["discounted"]
+    before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    client.post(f"/products/{sample['products']['curly']}/batches/{batch}/full-price")
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == 1
+
+
+def test_the_full_price_button_only_shows_on_a_discounted_row(client, sample):
+    """An active batch has nothing to undo."""
+    body = client.get("/").text
+    assert body.count("/full-price") == 1        # only the discounted one
+
+
+def test_only_a_discounted_batch_can_go_back_to_full_price(client, sample, db):
+    """Guarded in the SQL, so this cannot quietly un-resolve something else."""
+    batch = sample["batches"]["due_soon"]        # active already
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/full-price")
+    row = db.execute("SELECT status FROM batches WHERE id = ?", (batch,)).fetchone()
+    assert row["status"] == "active"             # unchanged, and no error
+
+
+def test_the_camera_does_not_save_by_itself(client):
+    """From the iPad test: Take photo submitted the form and left edit mode.
+
+    Taking a photo is one step of filling the form in, not the act of submitting
+    it — it used to commit a name somebody might still have been typing.
+    """
+    import re
+
+    js = client.get("/static/js/photo.js").text
+    # Quoted, because 'camera-take' is a substring of 'camera-taken' and an
+    # unquoted split lands on the wrong occurrence.
+    handler = re.search(
+        r"getElementById\('camera-take'\)\.addEventListener\('click',(.*?)\n  \}\);",
+        js, re.S,
+    )
+    assert handler, "the camera-take handler is not in the shape expected"
+    assert "upload(" not in handler.group(1), "taking a photo uploads immediately again"
+    assert "captured = blob" in handler.group(1)
+    assert "camera-taken" in js, "nothing tells the person the photo is held"
+
+
+def test_the_product_screen_says_the_photo_is_waiting(client, sample):
+    """Otherwise a taken photo looks like nothing happened."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert 'id="camera-taken"' in body
+    assert "press <strong>Save</strong>" in body
+
+
+def test_a_plus_button_reaches_the_scan_page_from_everywhere(client, sample):
+    """Adding a date happens hundreds of times a week — always under a thumb."""
+    for path in ("/", "/products", "/sheet", "/settings",
+                 f"/products/{sample['products']['monster']}"):
+        body = client.get(path).text
+        assert 'class="fab no-print"' in body, path
+        assert 'href="/scan"' in body, path
+
+
+def test_the_plus_button_is_not_on_the_printed_sheet(client, sample):
+    """It is no-print, and the print CSS has to actually hide that class."""
+    css = client.get("/static/css/app.css").text
+    print_block = css.split("@page")[1]
+    assert ".no-print" in print_block
+
+
+def test_the_plus_button_is_hidden_from_anyone_not_signed_in(anon_client, staff):
+    assert 'class="fab' not in anon_client.get("/login").text
+
+
+def test_a_batch_date_can_be_corrected(client, sample, db, staff):
+    """Punch list item 5. A date saved wrong used to live forever."""
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+        data={"expiry_date": days(9)},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    row = db.execute(
+        "SELECT expiry_date, edited_by, edited_at, added_by FROM batches WHERE id = ?",
+        (batch,),
+    ).fetchone()
+    assert row["expiry_date"] == days(9)
+    assert row["edited_by"] == staff["id"]
+    assert row["edited_at"] is not None
+    # Who first recorded it survives — that is what editing buys over a delete.
+    assert row["added_by"] == sample["user_id"]
+
+
+def test_correcting_a_date_onto_a_live_one_is_refused(client, sample, db):
+    """The same duplicate check as an add, from app/catalogue.py.
+
+    The Tim Tams have a live batch at +1 and another at +7. Moving the +7 onto
+    +1 is the duplicate the app exists to prevent, and it must say so rather
+    than surface an IntegrityError.
+    """
+    batch = sample["batches"]["due_edge"]          # curly, +7
+    response = client.post(
+        f"/products/{sample['products']['curly']}/batches/{batch}/date",
+        data={"expiry_date": days(1)},             # curly already has this, discounted
+    )
+    assert response.status_code == 200
+    assert "Already tracked" in response.text
+    assert db.execute("SELECT expiry_date FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == days(7), "the date moved anyway"
+
+
+def test_saving_a_date_unchanged_is_not_a_duplicate_of_itself(client, sample, db):
+    """Without excluding the row being edited, this finds itself and refuses."""
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+        data={"expiry_date": days(2)},             # the date it already has
+        follow_redirects=False,
+    )
+    assert response.status_code == 303, "a batch was refused as its own duplicate"
+    assert db.execute("SELECT expiry_date FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == days(2)
+
+
+def test_a_corrected_date_still_refuses_an_implausible_year(client, sample, db):
+    """Same parse_expiry as the add path — a mistyped year poisons the due list."""
+    batch = sample["batches"]["due_soon"]
+    response = client.post(
+        f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+        data={"expiry_date": "2126-08-14"},
+    )
+    assert response.status_code == 200
+    assert "Check the year" in response.text
+    assert db.execute("SELECT expiry_date FROM batches WHERE id = ?",
+                      (batch,)).fetchone()[0] == days(2)
+
+
+def test_the_product_screen_shows_who_changed_a_date(client, sample, db):
+    """Attribution is the point — it sits alongside who added it, not instead."""
+    batch = sample["batches"]["due_soon"]
+    client.post(f"/products/{sample['products']['shouty']}/batches/{batch}/date",
+                data={"expiry_date": days(9)})
+    body = client.get(f"/products/{sample['products']['shouty']}").text
+    assert "date changed" in body
+    assert STAFF_NAME in body            # who corrected it
+    assert "Mohit" in body               # and who first recorded it
+
+
+def test_the_product_screen_hides_its_editing_controls(client, sample):
+    """Punch list item 4. The pickers used to sit on screen permanently, so a
+    saved category read like unfinished work rather than a saved fact."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    assert '<details class="edit"' in body
+    assert "<summary" in body
+    # Closed by default: <details> without `open` is collapsed.
+    assert '<details class="edit" >' in body or '<details class="edit">' in body
+    assert 'class="edit" open' not in body
+
+
+def test_one_form_covers_name_category_and_photo(client, sample):
+    """One toggle, one form, one Save — not three pickers with three Saves."""
+    body = client.get(f"/products/{sample['products']['monster']}").text
+    form = body.split('class="edit-form"')[1].split("</form>")[0]
+    for field in ('id="name"', 'id="category"', 'id="photo"'):
+        assert field in form, field
+    assert form.count('type="submit"') == 1
+    # The barcode is identity, not an editable field.
+    assert 'name="barcode"' not in form
+
+
+def test_a_product_can_be_renamed(client, sample, db):
+    """Settles the question iteration 1 left open: staff can rename a product.
+
+    A name typed wrong at 7am on a Saturday should be correctable. Nothing
+    renames automatically and there is no bulk tidy-up.
+    """
+    product = sample["products"]["monster"]
+    response = client.post(f"/products/{product}/edit",
+                           data={"name": "Monster Ultra Zero 500mL", "category": ""},
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert db.execute("SELECT name FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == "Monster Ultra Zero 500mL"
+
+
+def test_renaming_keeps_every_batch(client, sample, db):
+    """The product is one row, so a rename carries its whole history with it."""
+    product = sample["products"]["monster"]
+    before = db.execute("SELECT COUNT(*) FROM batches WHERE product_id = ?",
+                        (product,)).fetchone()[0]
+    client.post(f"/products/{product}/edit", data={"name": "Renamed Thing"})
+    assert db.execute("SELECT COUNT(*) FROM batches WHERE product_id = ?",
+                      (product,)).fetchone()[0] == before
+
+
+def test_a_blank_name_is_refused_and_reopens_the_panel(client, sample, db):
+    """Never silently keep the old name — and never close on what was typed."""
+    product = sample["products"]["monster"]
+    response = client.post(f"/products/{product}/edit", data={"name": "   "})
+    assert response.status_code == 200
+    assert "Give the product a name" in response.text
+    assert 'class="edit" open' in response.text
+    assert db.execute("SELECT name FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == MONSTER_NAME
+
+
+def test_a_messy_imported_name_is_left_alone_by_default(client, sample, db):
+    """Trailing whitespace and curly apostrophes survive an unrelated edit.
+
+    Staff recognise these names as they are. Editing the category must not
+    quietly tidy the name — see docs/DATA-NOTES.md.
+    """
+    product = sample["products"]["shouty"]
+    original = db.execute("SELECT name FROM products WHERE id = ?",
+                          (product,)).fetchone()[0]
+    assert original == "C/RIDGE WATER 1L  "        # the real export has this
+
+    body = client.get(f"/products/{product}").text
+    assert 'value="C/RIDGE WATER 1L  "' in body, "the field must offer it verbatim"
+
+
+def test_the_edit_panel_reopens_on_a_bad_photo(client, sample):
+    """A rejected save must not close the panel and swallow the typing."""
+    response = _edit(
+        client, sample["products"]["monster"],
+        files={"photo": ("notes.txt", b"not a photograph", "text/plain")},
+    )
+    assert "not an image" in response.text
+    assert 'class="edit" open' in response.text
+
+
+def test_a_bad_photo_does_not_save_the_name_either(client, sample, db):
+    """One form, one save: if it is refused, none of it lands."""
+    product = sample["products"]["monster"]
+    _edit(client, product, name="Should Not Persist",
+          files={"photo": ("notes.txt", b"not a photograph", "text/plain")})
+    assert db.execute("SELECT name FROM products WHERE id = ?",
+                      (product,)).fetchone()[0] == MONSTER_NAME
+
+
+def test_the_photo_script_sends_the_whole_form(client):
+    """It used to post a FormData holding only the photo.
+
+    That was right when the photo had a route of its own. Now name, category and
+    photo save together, so sending just the image would discard a rename typed
+    in the same panel — and the shrink path is the one an iPad always takes.
+    """
+    js = client.get("/static/js/photo.js").text
+    assert "new FormData(form)" in js
+    assert "data.set('photo'" in js
+    assert 'button[type="submit"]' in js, "a bare button selector grabs Camera"
+
+
 def test_category_can_be_set_from_the_product_screen(client, sample, db):
-    client.post(f"/products/{sample['products']['shouty']}/category",
-                data={"category": "Water"})
+    client.post(f"/products/{sample['products']['shouty']}/edit",
+                data={"name": "C/RIDGE WATER 1L", "category": "Water"})
     assert db.execute(
         """SELECT c.name FROM products p JOIN categories c ON c.id = p.category_id
             WHERE p.id = ?""",
@@ -547,7 +1022,8 @@ def test_category_can_be_set_from_the_product_screen(client, sample, db):
 
 
 def test_clearing_the_category_is_allowed(client, sample, db):
-    client.post(f"/products/{sample['products']['monster']}/category", data={"category": ""})
+    client.post(f"/products/{sample['products']['monster']}/edit",
+                data={"name": MONSTER_NAME, "category": ""})
     assert db.execute(
         "SELECT category_id FROM products WHERE id = ?", (sample["products"]["monster"],)
     ).fetchone()[0] is None
@@ -575,12 +1051,24 @@ def _photo_bytes(width=2000, height=1500, orientation=None) -> bytes:
     return buffer.getvalue()
 
 
+# Every product edit goes through one form now, and `name` is required — so the
+# photo tests carry the existing name along rather than each asserting a rename.
+MONSTER_NAME = "Monster Ultra Zero 500ml"
+
+
+def _edit(client, product_id, name=MONSTER_NAME, **kwargs):
+    """POST the combined edit form. kwargs go straight through (files=, data=)."""
+    data = {"name": name}
+    data.update(kwargs.pop("data", {}))
+    return client.post(f"/products/{product_id}/edit", data=data, **kwargs)
+
+
 def test_uploading_a_photo_attaches_it_to_the_product(client, sample, db, photo_dir):
-    response = client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    response = _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
         follow_redirects=False,
-    )
+        )
     assert response.status_code == 303
 
     stored = db.execute(
@@ -593,8 +1081,8 @@ def test_uploading_a_photo_attaches_it_to_the_product(client, sample, db, photo_
 def test_a_photo_is_resized_and_stripped(client, sample, photo_dir):
     from PIL import Image
 
-    client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(orientation=6), "image/jpeg")},
     )
     saved = Image.open(photo_dir / "9300601234567.jpg")
@@ -606,11 +1094,53 @@ def test_a_photo_is_resized_and_stripped(client, sample, photo_dir):
     assert (photo_dir / "9300601234567.jpg").stat().st_size < 80 * 1024
 
 
+def test_an_uploaded_photo_actually_serves(client, sample, db, photo_dir):
+    """Punch list item 8, and the test that could not exist before it.
+
+    The photo folder was served by a StaticFiles mount over a hardcoded path
+    while uploads honoured TTD_PHOTO_DIR, so with the variable set the two
+    disagreed and every image rendered broken — which is what the iPad session
+    saw. A mount binds its directory once at import, and the suite points each
+    test at a fresh temp folder, so no test could ever have caught it. Served by
+    a route resolved per request, this fails when they disagree.
+    """
+    _edit(client, sample["products"]["monster"],
+          files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")})
+
+    stored = db.execute(
+        "SELECT image_path FROM products WHERE id = ?", (sample["products"]["monster"],)
+    ).fetchone()[0]
+    assert stored == "data/photos/9300601234567.jpg"
+
+    response = client.get(f"/{stored}")
+    assert response.status_code == 200, "the photo is stored but does not serve"
+    assert response.content[:2] == b"\xff\xd8", "that is not a JPEG"
+    assert len(response.content) == (photo_dir / "9300601234567.jpg").stat().st_size
+
+
+def test_a_photo_url_on_the_page_can_be_fetched(client, sample, db):
+    """The <img> src the Due screen renders has to be a URL that works."""
+    import re
+
+    _edit(client, sample["products"]["monster"],
+          files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")})
+
+    src = re.search(r'<img class="thumb" src="([^"]+)"', client.get("/").text)
+    assert src, "no photo rendered on the Due screen"
+    assert client.get(src.group(1)).status_code == 200
+
+
+def test_a_photo_request_cannot_climb_out_of_the_folder(client):
+    """The one place a request names a file on disk."""
+    for attempt in ("../../app/schema.sql", "..%2f..%2fapp%2fschema.sql", "../tecoma.db"):
+        assert client.get(f"/data/photos/{attempt}").status_code in (404, 400), attempt
+
+
 def test_a_photo_appears_on_batches_recorded_months_ago(client, sample):
     """It hangs off the barcode, so it backfills everything already recorded."""
     assert "thumb-empty" in client.get("/").text
-    client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
     )
     body = client.get("/").text
@@ -619,8 +1149,8 @@ def test_a_photo_appears_on_batches_recorded_months_ago(client, sample):
 
 def test_replacing_a_photo_leaves_no_orphan(client, sample, photo_dir):
     for _ in range(3):
-        client.post(
-            f"/products/{sample['products']['monster']}/photo",
+        _edit(
+            client, sample["products"]["monster"],
             files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
         )
     files = [p for p in photo_dir.iterdir() if p.is_file()]
@@ -629,8 +1159,8 @@ def test_replacing_a_photo_leaves_no_orphan(client, sample, photo_dir):
 
 def test_the_photo_url_changes_when_the_photo_does(client, sample):
     """Same filename every time, so without a stamp an iPad shows a stale one."""
-    client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")},
     )
     body = client.get(f"/products/{sample['products']['monster']}").text
@@ -639,8 +1169,8 @@ def test_the_photo_url_changes_when_the_photo_does(client, sample):
 
 
 def test_a_file_that_is_not_an_image_is_refused_politely(client, sample, db):
-    response = client.post(
-        f"/products/{sample['products']['monster']}/photo",
+    response = _edit(
+        client, sample["products"]["monster"],
         files={"photo": ("notes.txt", b"this is not a photograph", "text/plain")},
     )
     assert response.status_code == 200
@@ -672,7 +1202,6 @@ def test_a_product_with_no_photo_is_a_normal_state(client, sample):
 def test_sheet_lists_what_is_due_in_the_window(client, sample, db):
     body = client.get("/sheet").text
     assert "C/RIDGE WATER 1L" in body                  # due in 2 days
-    assert "Monster Ultra Zero 500ml" in body          # past date, still on the shelf
     far_off = db.execute(
         "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["outside"],)
     ).fetchone()[0]
@@ -686,16 +1215,35 @@ def test_sheet_range_is_adjustable(client, sample, db):
     assert _au(far_off) in client.get("/sheet?days=45").text
 
 
-def test_sheet_groups_by_category_with_uncategorised_last(client, sample):
+def test_sheet_groups_by_category_with_uncategorised_last(client, sample, db):
+    """The categorised item needs an in-window date now the range is bounded."""
+    db.execute(
+        "INSERT INTO batches (product_id, expiry_date, status, added_by) "
+        "VALUES (?, ?, 'active', ?)",
+        (sample["products"]["monster"], days(3), sample["user_id"]),
+    )
+    db.commit()
     body = client.get("/sheet").text
     assert body.index("Energy Drinks") < body.index("No category")
     assert "Uncategorised" not in body
 
 
 def test_sheet_sorts_by_date_within_a_group(client, sample, db):
-    """Two uncategorised items: the water in 2 days, the Tim Tams in 7."""
+    """The uncategorised group, in date order.
+
+    Asserted on the rendered dates rather than on two product names: the Tim
+    Tams now hold both the soonest date in the group (day 1, discounted) and the
+    latest (day 7), so naming products pins the test to which batch happens to
+    come first rather than to the ordering itself.
+    """
+    import re
+
     body = client.get("/sheet").text
-    assert body.index("C/RIDGE WATER 1L") < body.index("Tim Tam")
+    group = body.split("No category")[1]
+    dates = re.findall(r'<td class="col-date">([^<]+)</td>', group)
+    assert len(dates) >= 2, "expected several rows in the uncategorised group"
+    parsed = [_from_au(d) for d in dates]
+    assert parsed == sorted(parsed), f"out of order: {dates}"
 
 
 def test_sheet_has_a_tick_box_and_a_blank_price_column(client, sample):
@@ -710,11 +1258,67 @@ def test_sheet_shows_the_barcode_on_every_line(client, sample):
     assert "9300609876543" in body
 
 
-def test_sheet_hides_resolved_batches(client, sample, db):
-    resolved = db.execute(
-        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["resolved"],)
+def test_sheet_shows_a_discounted_batch(client, sample, db):
+    """Inverted 13 Aug with the status change — see test_home_shows_a_discounted_batch.
+
+    A discounted item is still sellable and still wants a sticker checked, so it
+    belongs on the sheet. What the sheet leaves out is past dates, which is a
+    question about the date rather than the status.
+    """
+    discounted = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["discounted"],)
     ).fetchone()[0]
-    assert _au(resolved) not in client.get("/sheet").text
+    assert _au(discounted) in client.get("/sheet").text
+
+
+def test_sheet_leaves_out_past_date_items(client, sample, db):
+    """Amended 13 Aug: the sheet is a pricing list, not the worklist.
+
+    A past-date item is not discounted, it is pulled off the shelf. Before this
+    the shop's real sheet opened with 27 of them ahead of the week's work.
+    """
+    overdue = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["overdue"],)
+    ).fetchone()[0]
+    body = client.get("/sheet").text
+    assert _au(overdue) not in body
+    assert "Monster Ultra Zero 500ml" not in body   # its only other date is 30 days out
+    assert "(past)" not in body                     # the marker has nothing left to mark
+
+
+def test_the_due_screen_still_shows_the_past_date_backlog(client, sample, db):
+    """The two screens diverge deliberately — this is the half that must not.
+
+    One definition of "due" survives: the Due screen is the worklist, and a
+    past-date item is the most urgent thing on it. If bounding the sheet ever
+    gets copied into home.py, this goes red.
+    """
+    overdue = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["overdue"],)
+    ).fetchone()[0]
+    body = client.get("/").text
+    assert _au(overdue) in body
+    assert "Monster Ultra Zero 500ml" in body
+
+
+def test_sheet_includes_an_item_expiring_today(client, sample, db):
+    """The lower bound is inclusive: today's stock still wants a sticker.
+
+    Asserted on a product name rather than on today's date, because the sheet
+    title prints today either way — checking the date alone passes against a
+    sheet bounded with `>` and catches nothing.
+    """
+    product_id = db.execute(
+        "INSERT INTO products (barcode, name) VALUES ('9300602222222', ?)",
+        ("Dies Today Yoghurt 170g",),
+    ).lastrowid
+    db.execute(
+        "INSERT INTO batches (product_id, expiry_date, status, added_by) "
+        "VALUES (?, ?, 'active', ?)",
+        (product_id, days(0), sample["user_id"]),
+    )
+    db.commit()
+    assert "Dies Today Yoghurt 170g" in client.get("/sheet").text
 
 
 def test_sheet_survives_an_absurd_range(client, sample):
@@ -741,18 +1345,98 @@ def test_settings_opens_for_anyone_signed_in(client):
 
 def test_the_expiry_window_can_be_changed_and_the_screens_follow(client, sample, db):
     """It is a setting precisely so this does not need a code change."""
-    assert "Arnott" in client.get("/").text            # 7 days out, inside the window
+    edge = db.execute(
+        "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["due_edge"],)
+    ).fetchone()[0]
+    assert _au(edge) in client.get("/").text           # 7 days out, inside the window
+
     client.post("/settings/window", data={"days": 3})
     assert db.execute(
         "SELECT value FROM settings WHERE key = 'expiry_window_days'"
     ).fetchone()[0] == "3"
-    assert "Arnott" not in client.get("/").text
-    assert "Due within 3 days" in client.get("/").text
+
+    # Checked on the date, not the product name: the Tim Tams also carry a
+    # discounted date tomorrow, which is inside any window, so the name stays on
+    # the page while the 7-day date must drop off it.
+    body = client.get("/").text
+    assert _au(edge) not in body
+    assert "Due within 3 days" in body
 
 
 def test_an_absurd_window_is_clamped_not_crashed(client, db):
     client.post("/settings/window", data={"days": 100000})
     assert client.get("/").status_code == 200
+
+
+def test_a_category_can_be_deleted(client, sample, db):
+    """Punch list item 6. A typo in the filter list was permanent before this."""
+    response = client.post(f"/settings/categories/{sample['cat_id']}/delete",
+                           follow_redirects=False)
+    assert response.status_code == 303
+    assert db.execute("SELECT COUNT(*) FROM categories WHERE id = ?",
+                      (sample["cat_id"],)).fetchone()[0] == 0
+
+
+def test_deleting_a_category_keeps_its_products(client, sample, db):
+    """ON DELETE SET NULL. Losing a category must never lose the catalogue."""
+    product = sample["products"]["monster"]
+    client.post(f"/settings/categories/{sample['cat_id']}/delete")
+
+    row = db.execute("SELECT category_id FROM products WHERE id = ?", (product,)).fetchone()
+    assert row is not None, "the product went with the category"
+    assert row["category_id"] is None       # uncategorised, which is normal
+    assert client.get(f"/products/{product}").status_code == 200
+    assert client.get("/").status_code == 200
+
+
+def test_deleting_a_category_names_it_and_says_what_uses_it(client, sample, db):
+    """Reworded 13 Aug after the iPad test: the question names the category.
+
+    "Delete Confectionary" with a separate "Nothing is using it" read as two
+    unrelated bits of text. It is one sentence now, and the number is the whole
+    point of it — one product is nothing, ninety is worth a second look.
+    """
+    # Whitespace-collapsed: the sentence spans several lines in the template, and
+    # asserting on the raw HTML would make it a test of the indentation.
+    body = " ".join(client.get("/settings").text.split())
+    assert "Are you sure you want to delete Energy Drinks?" in body
+    assert "1 product uses it, and it becomes uncategorised" in body
+
+    db.execute("INSERT INTO products (barcode, name, category_id) VALUES (?, ?, ?)",
+               ("9300603333333", "Another Energy Drink", sample["cat_id"]))
+    db.commit()
+    body = " ".join(client.get("/settings").text.split())
+    assert "2 products use it, and they become uncategorised" in body
+
+
+def test_the_category_delete_sits_beside_rename(client, sample):
+    """It used to be on its own line below, reading like a separate section."""
+    body = client.get("/settings").text
+    row = body.split('class="cat-row"')[1].split("</details>")[0]
+    assert ">Rename<" in row
+    assert ">Delete<" in row
+
+
+def test_an_unused_category_says_nothing_is_using_it(client, db, staff):
+    """A fresh category has no products, and the sentence has to still read."""
+    client.post("/settings/categories", data={"name": "Confectionary"})
+    body = " ".join(client.get("/settings").text.split())
+    assert "Are you sure you want to delete Confectionary? Nothing is using it." in body
+
+
+def test_a_category_delete_is_not_gated_behind_a_role(client, sample, db):
+    """No roles, by decision. Anyone signed in can do this."""
+    assert "role" not in [c[1] for c in db.execute("PRAGMA table_info(users)")]
+    assert client.post(f"/settings/categories/{sample['cat_id']}/delete",
+                       follow_redirects=False).status_code == 303
+
+
+def test_deleting_a_category_removes_it_from_every_filter(client, sample):
+    """It is the filter list this exists to clean up."""
+    assert "Energy Drinks" in client.get("/").text
+    client.post(f"/settings/categories/{sample['cat_id']}/delete")
+    for path in ("/", "/products", "/scan", "/settings"):
+        assert "Energy Drinks" not in client.get(path).text, path
 
 
 def test_a_category_can_be_added_here(client, db, staff):
@@ -1094,22 +1778,30 @@ def test_the_export_has_one_row_per_batch_and_a_header(client, sample):
                             "Days left", "Status"]
 
 
-def test_the_export_includes_resolved_batches(client, sample):
-    """Pulled rows are kept so waste can be reviewed — the export is where."""
+def test_the_export_includes_discounted_batches(client, sample):
+    """Every batch, and after 13 Aug that means every row that exists.
+
+    A deleted batch cannot appear here, which is why the export has to be taken
+    before a clear-out rather than after — it is the only record that keeps one.
+    """
     sheet = _sheet(client.get("/settings/export.xlsx"))
     statuses = [row[5].value for row in sheet.iter_rows(min_row=2)]
-    assert "pulled" in statuses
+    assert "discounted" in statuses
     assert statuses.count("active") == 4
+    assert "pulled" not in statuses and "sold" not in statuses
 
 
-def test_the_export_opens_on_what_is_still_on_the_shelf(client, sample):
-    """Live rows first, soonest first. Sorted by date alone, the shop's 583
-    pulled rows sit above everything that still matters."""
-    statuses = [row[5].value for row in _sheet(client.get("/settings/export.xlsx"))
-                .iter_rows(min_row=2)]
-    assert statuses[0] == "active"
-    assert statuses[-1] == "pulled"
-    assert statuses.index("pulled") == 4, "a resolved row is mixed in among the live ones"
+def test_the_export_is_in_date_order(client, sample):
+    """Soonest first, the same as every screen.
+
+    The old sort lifted live rows above resolved ones, because 583 already-pulled
+    rows were the oldest in the file and put the manager's cursor on the part that
+    no longer mattered. Those rows are gone, so plain date order is the useful
+    order again — and every remaining row is on the shelf.
+    """
+    dates = [row[3].value for row in _sheet(client.get("/settings/export.xlsx"))
+             .iter_rows(min_row=2)]
+    assert dates == sorted(dates), "the export is no longer in date order"
 
 
 def test_the_export_shows_uncategorised_as_blank_not_a_word(client, sample):
@@ -1164,3 +1856,10 @@ def _au(iso: str) -> str:
     from app.main import au_date
 
     return au_date(iso)
+
+
+def _from_au(rendered: str) -> str:
+    """'14 Aug 2026' -> '2026-08-14', for asserting on order rather than text."""
+    import datetime as dt
+
+    return dt.datetime.strptime(rendered.strip(), "%d %b %Y").date().isoformat()

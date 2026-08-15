@@ -39,9 +39,7 @@
             <tr>
               <td class="col-tick"><span class="tick"></span></td>
               <td class="col-name">{{ r.name }}</td>
-              <td class="col-date">
-                {{ r.expiry_date | au_date }}{% if r.expiry_date < today.isoformat() %} (past){% endif %}
-              </td>
+              <td class="col-date">{{ r.expiry_date | au_date }}</td>
               <td class="col-barcode">{{ r.barcode }}</td>
               <td class="col-price"></td>
             </tr>

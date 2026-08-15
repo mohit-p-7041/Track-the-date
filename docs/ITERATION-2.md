@@ -35,7 +35,7 @@ deploy.
 Five issues, from Mohit using the app on the iPad on 13 Aug. Ordered by what would hurt the
 first staff session most, not by the order they were reported.
 
-### 1. The barcode field accepts anything typed into it `[ ]`
+### 1. The barcode field accepts anything typed into it `[x]` — **done 13 Aug**
 
 Typing words into the barcode field creates a product. Nothing rejects it, and because products
 are never deleted that junk row is permanent.
@@ -54,6 +54,12 @@ actually are settled it the other way:
 | 4 of the 9 | have no numeric twin yet — magnum almond, In A Biscuit, Kit Kat Neapolitan 42g, Bundaberg traditional lemonade |
 | plus 1 numeric | `1930083008300830083008300830083008300830` — 40 digits, `1930083` repeating. A gun misfire |
 
+*Checked against the data on 13 Aug: the count of about five is right, two of the attributions are
+not.* `golden gay time` has **no** numeric twin, and `Bundaberg traditional lemonade 375ml` —
+listed here as having none — has a plausible one in `Bundaberg Lemonade` (`9311493002282`).
+It made no difference to the decision, and `magnum almond` ended up recovered rather than deleted
+in any case, but the list should not be trusted item by item.
+
 So they are not a category of valid barcode to protect. They are the same data-entry accident
 this item exists to prevent, already in the database. **10 products carrying 15 batches** fail
 the rule — 1% of the catalogue — and the four without a twin come back the next time somebody
@@ -62,17 +68,56 @@ scans the actual barcode on the packet.
 Build it as: normalise (trim, strip a leading `]xx`), validate in `app/catalogue.py` with a plain
 message, and a `CHECK` constraint in `app/schema.sql` as the backstop, the same way
 `idx_batches_unique_live` backstops the duplicate rule. SQLite cannot add a constraint to an
-existing table, so this is a table rebuild in a migration — which must clear the 10 offending
+existing table, so this is a table rebuild in a migration — which must clear the offending
 products first, or the rebuild fails on them. Back up and take an Excel export before running it.
 
-### 2. The discount sheet is full of past-date items `[ ]`
+**Built 13 Aug, and the count above is wrong in a way worth recording.** This item said the
+migration must clear all 10 offending products. It clears **8**. The other two are `]C1…` — the
+gun's AIM identifier stuck to a real barcode — and this item's own rule says that prefix is
+stripped as transport noise. Normalising *before* judging leaves 16 valid digits, so
+`golden gay time lamington` and `magnum almond` keep their names, batches and history instead of
+being deleted as junk. `magnum almond` is one of the four this item listed as having no numeric
+twin, so under "clear all 10" it would have been lost until someone rescanned the packet.
 
-The printed sheet is what staff carry round the aisles on Saturday, and it currently opens with
-83 rows marked `(past)` before reaching anything expiring this week. `app/routes/sheet.py` has
-a cutoff but **no lower bound** — `WHERE b.expiry_date <= ?` — so every unresolved past date
-since the import is on the page.
+Final numbers, run against the real database: **952 → 944 products, 2340 → 2327 batches.**
+
+Three things the build turned up that this item did not anticipate:
+
+- **`scripts/import_beep.py` needed the rule too.** It inserts products directly, so with the
+  CHECK constraint in place a fresh import dies on those 8 rows — and the laptop deploy is a fresh
+  import, not a copied database. It now applies `parse_barcode()` and reports what it refused.
+- **`check_db.py --expect-import` was already rotting.** `EXPECTED_PRE_EXPIRED` counts what was
+  expired *when the import ran*, so it drifts daily: 581 as at the export's own date, 608 by
+  13 Aug. Reproducing it needs `--today 2026-08-10`, which is now documented next to the
+  constant. This was true before this change; the number had simply never been reproduced on a
+  later day.
+- **`str.isdigit()` would have been a bug.** It returns True for `²` and `٣`, which the CHECK
+  constraint refuses — so the app would have accepted a barcode the database then rejected, and
+  staff would meet an IntegrityError page instead of a sentence. The rule uses an explicit
+  `[0-9]` match, and `test_the_two_barcode_layers_agree_on_unicode_digits` holds the two halves
+  together.
+
+The rebuild turns foreign keys **off**, and that is not incidental: with them on, `DROP TABLE
+products` performs an implicit `DELETE FROM`, which fires `batches`' `ON DELETE CASCADE` and takes
+every batch in the shop. Verified on a copy before the real run — 2327 batches after, not 0.
+
+### 2. The discount sheet is full of past-date items `[x]` — **done 13 Aug**
+
+The printed sheet is what staff carry round the aisles on Saturday, and it opened with past-date
+rows before reaching anything expiring this week. `app/routes/sheet.py` had a cutoff but **no
+lower bound** — `WHERE b.expiry_date <= ?` — so every unresolved past date since the import was on
+the page.
 
 Fix: bound the range at both ends, `>= today AND <= cutoff`.
+
+**Corrected figure:** this item first said "83 rows marked `(past)`". 83 is the *total* the sheet
+printed; **27 of those were past-date**, which matches the number in "Resolved: what happens to a
+retired account's batches" below. Bounded, the sheet prints **56 rows** — exactly the home
+screen's "Due within 7 days — 56" half, with "Past date — 27" left on the worklist where it
+belongs. Verified against the real database, not the fixtures.
+
+The lower bound is inclusive, so an item expiring *today* still prints: it is on the shelf and
+still sellable. The `(past)` marker in `sheet.html` was removed with the change.
 
 **This deliberately amends a decision from iteration 1**, which said the sheet shows exactly
 what the home screen shows so that two definitions of "due" cannot disagree. The amendment is
@@ -86,7 +131,7 @@ that they are not two definitions of the same thing:
 One definition of "due" survives; the sheet is a narrower question asked of it. Cheapest fix on
 this list and the most visible on Saturday.
 
-### 3. Swipe to act on a batch, and drop two of the four statuses `[ ]`
+### 3. Swipe to act on a batch, and drop two of the four statuses `[x]` — **done 13 Aug**
 
 The biggest change on the list, and the one that touches the most files. Two parts.
 
@@ -124,12 +169,27 @@ confirmation inline in the row. The laptop has no touchscreen and uses the same 
 actions need a non-swipe path as well. `idx_batches_unique_live` gets simpler as a result: with
 no resolved-but-present rows, a date is free again as soon as the batch is deleted.
 
+**Built 13 Aug, in two commits** — the statuses first, then the gesture, because they carry
+different risk and the doc calls them two parts. The buttons are the mechanism and the swipe is a
+shortcut that submits one of them, which is what makes the laptop and a JS-off browser work
+without a second code path. `data-confirm` is written by the server only for rows that need asking,
+so the rule lives in `needs_confirmation()` alone and the JS never re-derives it from dates.
+
+The index did get simpler, as predicted, and the tests that proved a resolved date could be reused
+were rewritten to delete the batch instead.
+
+**Still wants the iPad.** Touch events cannot be driven from a terminal, so the gesture has not
+been felt on glass — the threshold (64px) and the vertical-scroll cutoff (24px) were reasoned
+about, not tuned against a thumb. The direction pairing is held by a regex over `swipe.js` rather
+than by executing it, because a JS test runner means npm and a build step. Both are worth five
+minutes on the iPad before Saturday.
+
 Blast radius, checked: `app/routes/products.py`, `app/schema.sql`, `app/templates/product.html`,
 `app/templates/settings.html`, `scripts/check_db.py`, `scripts/export_xlsx.py`,
 `scripts/import_beep.py`, and four files under `tests/`. Not a small change — see the schedule
 note at the end.
 
-### 4. Product detail should have an edit toggle `[ ]`
+### 4. Product detail should have an edit toggle `[x]` — **done 13 Aug**
 
 The product screen always shows its editing controls — a category picker with a Save, a photo
 picker with a Save — whether or not anyone is editing. After saving a category the picker stays
@@ -144,7 +204,26 @@ that decision, made by the shop: **staff can rename a product.** The messy impor
 as they are by default because staff recognise them; nothing renames automatically and there is
 no bulk tidy-up. But a name typed wrong at 7am on a Saturday can be corrected.
 
-### 5. Edit a batch's expiry date `[ ]`
+**Built 13 Aug.** One route, `POST /products/{id}/edit`, replacing `/category` and `/photo` — the
+punch list asked for one form, and two routes behind it would have been two ways to do the same
+thing. Consequences worth recording:
+
+- **`photo.js` had to change with it.** It built a `FormData` containing only the photo, which was
+  right while the photo had its own route; against a combined form it would have silently
+  discarded a rename typed in the same panel. It now posts the whole form with the shrunk image
+  swapped in. Its `querySelector('button')` also had to become `button[type="submit"]`, because
+  the Camera button now comes first in the form and was getting the "Saving…" state instead.
+- **A rejected save reopens the panel** (`<details open>`) rather than closing on what somebody
+  typed, and saves none of it — the name is not committed before the photo is attempted. The test
+  for that only fails if a `commit()` is added above the photo handling, which is the actual
+  mistake; the `rollback()` is explicit rather than load-bearing, since the connection closes
+  without committing anyway.
+- **A blank name is refused**, not silently replaced with the old one. Renaming is meant to be
+  deliberate in both directions.
+- The barcode is deliberately not editable. It is the product's identity; a wrong one is a
+  different product, and the barcode rule already governs how one gets created.
+
+### 5. Edit a batch's expiry date `[x]` — **done 13 Aug**
 
 A date saved wrong currently lives forever. Item 3 makes delete-and-rescan possible, which is
 enough to recover, but editing keeps the history — who first recorded it, and when — where a
@@ -160,6 +239,20 @@ Assessed against the logic flow, and **it does not break it**, provided:
 
 Lower priority than item 3: delete-and-rescan already recovers from the mistake, so this buys
 tidiness and a better audit trail rather than a capability that is missing.
+
+**Built 13 Aug.** Both conditions hold. `live_batch()` gained an `exclude_id` argument, which was
+the one thing this item did not foresee: without it a batch saved onto the date it already has
+finds *itself* and is refused as its own duplicate.
+
+Worth recording about the testing. The app-level duplicate check and
+`idx_batches_unique_live` deliberately produce the same message — "nobody needs to know which
+layer noticed" — so removing the app-level check does **not** turn the screen test red: the index
+raises, the route catches it, and the response is identical. That is the design working, but it
+means a black-box test cannot tell the two layers apart, so the app-level check is pinned directly
+in `test_rules.py` instead. The same shape as the barcode rule's two layers.
+
+The migration is the only additive one in this iteration — `ALTER TABLE ADD COLUMN` needs no
+rebuild and deletes nothing, so 1746 rows came through untouched.
 
 ### Resolved: what happens to a retired account's batches
 
@@ -183,7 +276,7 @@ Worth noting separately: the database has **27 `active` batches already past the
 them `sar ob`'s. Those are not touched by any migration — they are the backlog staff clear by
 swiping on Saturday, which is the first real use of item 3.
 
-### 6. Categories cannot be deleted `[ ]`
+### 6. Categories cannot be deleted `[x]` — **done 13 Aug**
 
 Settings can add and rename a category but not remove one. A typo made while scanning is
 therefore permanent in the filter list on every screen.
@@ -193,9 +286,17 @@ already a safe operation: `products.category_id` is `ON DELETE SET NULL`, so the
 back to uncategorised, which is a normal state the app handles everywhere. Nothing is lost that
 retyping the category does not restore. Say how many products it affects before it happens.
 
-### 7. Products should not be attributed to a person `[ ]`
+**Built 13 Aug, and it needed no schema change** — `ON DELETE SET NULL` was already in place, and
+that turned out to be the only interesting part: a test now changes it to `CASCADE` and confirms
+the suite goes red, because the failure mode is silently deleting the catalogue rather than
+anything visible on the screen. The count sentence agrees in plural, which is worth the two
+minutes on a screen the manager reads.
 
-`products.created_by` exists and is set on 2 of 954 rows. Only batches should carry a person:
+### 7. Products should not be attributed to a person `[x]` — **done 13 Aug**
+
+`products.created_by` exists and is set on **0** rows — not 2 of 954, which is what this item
+recorded. Checked against the pre-migration backup, so nothing was lost in the rebuild; the count
+was simply wrong when written. (954 was also wrong: there were 952 products.) Only batches should carry a person:
 a batch is something somebody did, a product is just a fact about a barcode that the shop sells.
 Drop the column in the same migration as the status change.
 
@@ -259,13 +360,13 @@ Two sessions of about three hours, Thu 13 and Fri 14 Aug, before the first staff
 
 | | Item | Why here | Est. |
 |---|---|---|---|
-| 1 | Sheet date range (item 2) | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
-| 2 | Barcode rule + migration (item 1) | Junk products are permanent; every hour of scanning adds more | 1½ hr |
-| 3 | Statuses + swipe (item 3) | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
-| 4 | Delete categories (item 6) | Small, and a typo in the filter list is permanent today | 30 min |
-| 5 | Edit toggle + rename (item 4) | Clutter on the busiest screen after Scan | 1 hr |
-| 6 | Edit expiry date (item 5) | Only if Friday has room; item 3 already covers recovery | 1 hr |
-| — | Drop `products.created_by` (item 7) | Rides along with item 3's migration, no extra session | — |
+| 1 | ~~Sheet date range (item 2)~~ **done** | Cheapest fix, and the sheet is the thing staff physically carry | 20 min |
+| 2 | ~~Barcode rule + migration (item 1)~~ **done** | Junk products are permanent; every hour of scanning adds more | 1½ hr |
+| 3 | ~~Statuses + swipe (item 3)~~ **done** | The first session *will* produce mis-scans, and there is no undo today | 2½ hr |
+| 4 | ~~Delete categories (item 6)~~ **done** | Small, and a typo in the filter list is permanent today | 30 min |
+| 5 | ~~Edit toggle + rename (item 4)~~ **done** | Clutter on the busiest screen after Scan | 1 hr |
+| 6 | ~~Edit expiry date (item 5)~~ **done** | Only if Friday has room; item 3 already covers recovery | 1 hr |
+| — | ~~Drop `products.created_by` (item 7)~~ **done** | Rode along with item 3's migration as planned | — |
 | — | Photo mount path (item 8) | Test-rig only. After Saturday | — |
 
 **That is about six and a half hours against six available, and items 2 and 3 both carry a
@@ -280,7 +381,8 @@ check the numbers before touching `data/tecoma.db`.
 Then, unchanged from iteration 1 and still outstanding:
 
 - **Deploy to the shop laptop** — `git clone`, `pip install -r requirements.txt`, run the
-  importer there rather than copying `data/tecoma.db`. Expect `All 16 checks passed` from
+  importer there rather than copying `data/tecoma.db`, with `--today 2026-08-10` so the
+  numbers match. Expect `All 17 checks passed` from
   `check_db.py --expect-import`. Generate the laptop's own mkcert certificate for *its* IP, and
   reserve that IP on the router or the iPad bookmarks break between sessions.
 - **Real staff names and PINs** — settled: staff add themselves on the Settings screen at the

@@ -7,12 +7,23 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sqlite3
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "data" / "tecoma.db"
+
+# `TTD_DB` points the whole app at another database file. Added 13 Aug for the
+# iPad session: the actions being tested are a real delete and a real discount,
+# and the only way to try them on realistic data without destroying the shop's
+# was to swap files by hand. This is the sibling of `TTD_PHOTO_DIR` in
+# app/photos.py, which already exists so a LAN test cannot litter the real photo
+# folder — the database deserved the same.
+#
+# Unset in production, which is every normal run: start.bat sets nothing, so the
+# shop laptop always resolves to data/tecoma.db.
+DB_PATH = Path(os.environ.get("TTD_DB") or ROOT / "data" / "tecoma.db")
 SCHEMA = ROOT / "app" / "schema.sql"
 SEED = ROOT / "app" / "seed.sql"
 

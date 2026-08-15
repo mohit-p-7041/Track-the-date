@@ -8,29 +8,51 @@ against it — these numbers come from the actual import, not an estimate.
 | | |
 |---|---|
 | Rows | 2,343 |
-| Unique products (barcodes) | 952 |
-| Batches created | 2,340 |
+| Unique products (barcodes) | 944 |
+| Batches created | 1,746 |
 | Duplicate rows collapsed | 3 |
-| Rows skipped | 0 |
+| Rows skipped | 13 barcodes refused, 581 already expired |
 | Staff accounts | 2 — `BP TECOMA` (2,293 rows), `sar ob` (50 rows) |
 | Date range | 25 May 2026 → 30 Mar 2032 |
 
 Columns: `Id`, `Name`, `Barcode`, `Expiration Date`, `Category`, `Memo`, `Added User`,
 `Added Date`.
 
-The export is clean. Every row has a barcode and a readable date, and no barcode maps to two
-different product names. That's better than most real-world imports.
+**Revised 13 Aug, when the barcode rule landed.** The first import of this file produced 952
+products and 2,340 batches, and this page called the export clean. It is not quite: every row has
+a readable date and no barcode maps to two names, but **eight barcodes are not barcodes** — seven
+marketing URLs someone scanned off the packet instead of the code, and one 40-digit gun misfire.
+The importer now refuses them, which drops 13 rows.
+
+Two more were `]C1…` — the gun's AIM identifier stuck to a real code. Those are recovered rather
+than refused: the prefix is stripped and the digits underneath are kept, so `golden gay time
+lamington` and `magnum almond` survive with their history.
+
+To reproduce these numbers exactly, pin the import date — the expired/live split moves with the
+calendar otherwise:
+
+```bash
+python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10
+```
 
 ## After import, as at 10 Aug 2026
 
 | Group | Batches |
 |---|---|
-| Already expired (imported as `pulled`) | 583 |
+| Already expired — **not imported** | 581 |
 | Due within 7 days | 62 |
-| Upcoming | 1,695 |
-| **Live total** | **1,757** |
+| Upcoming | 1,684 |
+| **Live total** | **1,746** |
 
-2,340 batches + 3 collapsed duplicates = 2,343, reconciling exactly with the original row count.
+1,746 imported + 581 already expired + 3 collapsed duplicates + 13 refused barcodes = 2,343,
+reconciling exactly with the original row count.
+
+**Amended again 13 Aug, with the status change.** Expired rows used to import as `pulled`. That
+status no longer exists — a batch is `active` or `discounted`, and anything else is a real
+deletion — so they are skipped instead. Importing them as `active` would have dropped 581 items
+nobody has seen in months onto the Due screen. This is the same outcome
+`scripts/migrate_statuses.py` produces on the existing database, so a fresh import on the shop
+laptop and the migrated dev copy hold identical rows.
 
 ## Things worth knowing
 
@@ -47,10 +69,14 @@ the old system. Either staff stopped resolving items when the premium plan lapse
 "remove once pulled" habit never formed. Worth knowing, because a tool that accumulates stale
 rows stops being trusted — the new app should make resolving an item as fast as adding one.
 
-These import as `pulled` with the note *"Expired before migration — not verified"* and no
-`resolved_by`, because nobody actually confirmed them. The stock is long gone from the shelves;
-only the records lingered. They stay out of the daily view and get cleared naturally as staff
-rescan those products.
+**These are no longer imported at all** (amended 13 Aug). They used to arrive as `pulled` with a
+note saying the migration rather than a person put them there. That status is gone, and bringing
+them in as `active` would put 581 items nobody has seen in months at the top of the Due screen. The
+stock is long gone from the shelves; only the records lingered, and the records are in
+`data/exports/tecoma-2026-08-13.xlsx` if they are ever wanted.
+
+581 rather than 583 here because two of them sat on barcodes the new rule refuses, so they were
+already gone before this applied.
 
 **Three exact duplicates existed** despite the old app running a duplicate check:
 
@@ -66,7 +92,7 @@ the pair from recurring at the database level via `idx_batches_unique_live`.
 Korean, and some with dates or pack counts baked in (`POWERADE LEM/LIME 600ML x 2 22.03.22`).
 
 Search has to be case-insensitive and whitespace-tolerant. Don't normalise the stored names —
-staff recognise them as written, and rewriting 952 names is a good way to make the app feel
+staff recognise them as written, and rewriting 944 names is a good way to make the app feel
 unfamiliar on day one.
 
 **No memos.** The `Memo` field is empty on all 2,343 rows. Staff never used it. Worth keeping the
@@ -82,19 +108,24 @@ field but not worth prominent screen space.
 | C/Ridge Water 1L | 19 |
 | Mt Franklin Still Water 600ml | 18 |
 
-At 2.5 batches per product on average, storing the photo once per barcode rather than once per
-row is roughly a 60% saving on image storage before compression even starts. At ~60 KB per photo
-across 952 products, the full library lands near 57 MB.
+At 1.9 batches per product on average now that the expired backlog is not imported, storing the
+photo once per barcode rather than once per row is still roughly a 50% saving on image storage
+before compression even starts. At ~60 KB per photo across 944 products, the full library lands
+near 57 MB.
 
 ## Re-running the import
 
-The importer is idempotent for products (matched on barcode) and uses `INSERT OR IGNORE` for
-batches, so re-running won't duplicate. To start completely fresh:
+The importer is idempotent for products (matched on barcode), and checks for each (product, date)
+pair explicitly rather than relying on `INSERT OR IGNORE` — the unique index is partial by design,
+so an ignore would not catch everything. Re-running won't duplicate. To start completely fresh:
 
 ```bash
 python scripts/init_db.py --reset
-python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
+python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10
 ```
+
+Pin `--today` to the export's own date, or the number of rows skipped as already-expired moves
+with the calendar and `check_db.py --expect-import` disagrees.
 
 Use `--dry-run` first to see the report without writing anything.
 

@@ -51,7 +51,9 @@ opens a short new-product form. Submit writes immediately.
 - [x] Submitting writes one batch with `added_by` set to the signed-in user
 - [x] **Duplicate: the app catches it before insert** and says "Already tracked — expires
       14 Sep 2026". Not a database error, and no offer to increase a quantity
-- [x] A duplicate whose earlier batch is `pulled` or `sold` is accepted, not blocked
+- [x] ~~A duplicate whose earlier batch is `pulled` or `sold` is accepted, not blocked~~ —
+      obsolete 13 Aug. Both statuses are gone, so there is no resolved-but-present row to step
+      past. A date comes free when the batch is **deleted**, and then it is free immediately
 - [x] After a successful add the form resets to the barcode field, ready for the next scan
 - [x] Nothing is held in browser state between entries — the laptop can sleep mid-session
 - [x] Date entry accepts a fast typed date; never renders or parses US format
@@ -169,9 +171,10 @@ real data the query returns 23 products, the twenty-odd properly spelled ones fi
 The list shows the 100 soonest by default with a link to the rest: 952 rows is 477 KB of HTML,
 which is fine on the laptop and slow on an old iPad. Both render in under 20 ms server-side.
 
-**Renaming a product is not built.** The names are ugly on purpose — staff recognise them — and
-"tidy the names" is exactly the change CLAUDE.md warns against, so it wants a deliberate decision
-rather than a text box that appeared by itself.
+**Renaming a product is built** — 13 Aug, punch list item 4. The names are ugly on purpose and
+nothing tidies them automatically: no bulk rename, no normalisation on save, and the field offers
+the stored name verbatim, trailing spaces and curly apostrophe included. What changed is that a
+name typed wrong at 7am can be corrected, which is a different thing from tidying the import.
 
 ## 7. Weekly discount sheet `[x]`
 
@@ -184,15 +187,21 @@ SPEC §4. The printable. Staff walk the aisles with it on the weekend.
 - [x] Print preview at A4 actually fits; check the page count for a realistic week
 
 Notes: printed to PDF at A4 and counted — **a realistic week (69 items on 11 Aug) is two pages**,
-about 35 lines each. It shows the same rows as the home screen, past-date ones included and
-marked "(past)", because two definitions of "due" would eventually disagree and the shelf would
-follow the wrong one.
+about 35 lines each.
+
+**Amended 13 Aug** (iteration 3 item 1): the range is bounded at both ends, so past-date items no
+longer print. Iteration 1 had this show exactly what the home screen shows, on the grounds that
+two definitions of "due" would disagree. They turned out not to be two definitions of one thing —
+the Due screen is a worklist and a past-date item is the most urgent thing on it, while this sheet
+is a pricing list and a past-date item is a pull, not a discount. One definition of "due"
+survives; the sheet is a narrower question asked of it. The `(past)` marker went with the change,
+having nothing left to mark.
 
 ## 8. Settings `[x]`
 
 SPEC §3.7. Open to everyone — there are no roles.
 
-- [x] Add and rename categories
+- [x] Add, rename and delete categories
 - [x] Add staff and reset PINs
 - [x] Run a backup on demand and show when the last one ran
 - [x] Edit `expiry_window_days`
@@ -225,26 +234,48 @@ SPEC §9, and `docs/ITERATION-2.md` for what to pick up next and in what order.
 **The iPad punch list — iteration 3, and the current work.** Five issues came out of the first
 real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in priority order:
 
-1. `[ ]` **Discount sheet shows past-date items.** No lower bound on the range, so 83 rows of
-   backlog print before this week's. Bound it `>= today`.
-2. `[ ]` **The barcode field accepts typed words.** Digits only, 6–18, after stripping the gun's
+1. `[x]` **Discount sheet shows past-date items.** No lower bound on the range, so 27 past-date
+   rows printed among the 83. Bounded `>= today AND <= cutoff`; the sheet now prints 56 rows,
+   exactly the home screen's "Due within 7 days" half. Done 13 Aug.
+2. `[x]` **The barcode field accepts typed words.** Digits only, 6–18, after stripping the gun's
    leading `]xx` AIM identifier. App-level message plus a `CHECK` constraint as the backstop.
-   The migration clears 10 legacy rows that fail it — QR-code URLs and one 40-digit gun misfire —
-   five of which are already duplicates of a properly scanned product.
-3. `[ ]` **Two statuses, and swipe to act.** `pulled` and `sold` are removed; a batch is `active`
-   or `discounted`, and anything else is a real deletion. On the Due screen, **right→left
-   deletes, left→right discounts**. Deleting a past-date item asks nothing; deleting one still in
-   date asks "expires in N days, are you sure?" first. The 583 imported `pulled` rows go — take
-   an Excel export first and keep it. Never deletes the product, even at zero batches.
-4. `[ ]` **Edit toggle on product detail.** Editing controls are always on screen. One Edit
-   toggle covering name, category and photo — **including renaming a product**, which is now a
-   deliberate decision rather than an open question.
-5. `[ ]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
-   with new `edited_by` / `edited_at` columns.
-6. `[ ]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
-   which is normal and recoverable. Say how many products it affects first.
-7. `[ ]` **Drop `products.created_by`.** Only batches carry a person; a product is a fact about a
-   barcode. Rides along with item 3's migration.
+   Done 13 Aug. Normalising before judging turned out to matter: of the 10 legacy rows, **2 were
+   `]C1…` on a real code and were recovered**, and **8 were deleted** (7 marketing URLs, 1
+   40-digit gun misfire) with 13 batches. 952→944 products, 2340→2327 batches. The importer
+   applies the same rule, so the laptop deploy no longer dies on those rows.
+3. `[x]` **Two statuses, and swipe to act.** Split in two while building — the doc calls it "two
+   parts" and the halves have different risk, so they were built and committed separately. Both
+   halves done 13 Aug.
+
+   - `[x]` **Two statuses.** `pulled` and `sold` removed; a batch is `active` or `discounted`, and
+     anything else is a real deletion. The 581 imported `pulled` rows are gone (581 not 583 — two
+     sat on barcodes the new rule had already refused). Delete and Discount work from the product
+     screen, with the confirmation revealed inline via `<details>` and no `confirm()`. Never
+     deletes the product, even at zero batches. Done 13 Aug; 2327→1746 batches.
+   - `[x]` **Swipe on the Due screen.** Right→left deletes, left→right discounts. Done 13 Aug.
+     The buttons are always in the markup and do the work; `swipe.js` only decides that a finger
+     movement meant one of them, so the laptop and a JS-off browser behave identically. On the real
+     data all 83 rows carry both actions and exactly the 56 in-window ones ask before deleting.
+     **The gesture itself still wants a real iPad** — touch events cannot be driven from here, and
+     the direction pairing is held by a source assertion rather than by running the code, because a
+     JS test runner would mean npm and a build step.
+4. `[x]` **Edit toggle on product detail.** One Edit toggle covering name, category and photo,
+   **including renaming a product** — the decision iteration 1 left open, now settled. Done
+   13 Aug. `POST /products/{id}/edit` replaced the separate `/category` and `/photo` routes, so
+   there is one form and one Save; a blank name is refused rather than silently kept, and a
+   rejected photo saves none of it.
+5. `[x]` **Edit a batch's expiry date.** Through the same duplicate check as an add, attributed
+   with new `edited_by` / `edited_at` columns. Done 13 Aug. `live_batch()` gained `exclude_id` so
+   a batch saved onto the date it already has is not refused as its own duplicate.
+6. `[x]` **Delete a category.** Not gated behind a role — products fall back to uncategorised,
+   which is normal and recoverable. Says how many products it affects first, with the plural
+   agreeing. Done 13 Aug. No new schema: `ON DELETE SET NULL` was already there, and a test now
+   proves changing it to CASCADE would be caught.
+7. `[x]` **Drop `products.created_by`.** Only batches carry a person; a product is a fact about a
+   barcode. Rode along with item 3's migration as planned. The column held **nothing** — 0 rows
+   set, not the 2 of 954 the punch list recorded, confirmed against the pre-migration backup — so
+   there was no data to lose. Removed from `schema.sql` too, or a fresh laptop database would
+   still have had it.
 8. `[ ]` **The photo mount ignores `TTD_PHOTO_DIR`.** `app/main.py:35` hardcodes `data/photos`
    while `photos.py` honours the variable, so uploads and serving can disagree. Production is
    unaffected — both resolve the same when the variable is unset. After Saturday.

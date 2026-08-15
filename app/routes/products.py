@@ -16,9 +16,15 @@ from fastapi.responses import RedirectResponse
 
 from app import photos
 from app.auth import current_user
-from app.catalogue import categories, resolve_category
+from app.catalogue import (
+    categories,
+    clean_name,
+    live_batch,
+    parse_expiry,
+    resolve_category,
+)
 from app.db import get_conn
-from app.views import render, setting
+from app.views import au_date, render, setting
 
 router = APIRouter()
 
@@ -27,14 +33,29 @@ router = APIRouter()
 # back and links to the rest.
 PAGE = 100
 
+# Two endings, not four. Amended 13 Aug — see CLAUDE.md. A batch gets a
+# discount sticker, or it is deleted for real. 'pulled' and 'sold' were never
+# used once by the shop.
 RESOLUTIONS = {
     "discounted": "Discounted",
-    "pulled": "Pulled",
-    "sold": "Sold",
 }
 
 # Straight and curly apostrophes are the same character to a person typing.
 NORMALISED_NAME = "REPLACE(p.name, '’', '''')"
+
+# Where the Due screen's rows post back to, so acting on a batch from there
+# returns there instead of jumping to the product.
+RETURN_PATHS = ("/", "/products")
+
+
+def _back(next: str, product_id: int) -> str:
+    """Where to send someone after they act on a batch.
+
+    Only a known path is honoured. `next` arrives in a form field, and a route
+    that redirects to whatever it is handed is an open redirect — worth
+    refusing even on a LAN app, because it costs one comparison.
+    """
+    return next if next in RETURN_PATHS else f"/products/{product_id}"
 
 
 def _tokens(query: str) -> list[str]:
@@ -124,7 +145,8 @@ def product_detail(
     return _detail_page(request, conn, product_id)
 
 
-def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int, message: str = ""):
+def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int,
+                 message: str = "", editing: bool = False):
     product = conn.execute(
         """SELECT p.*, c.name AS category_name
              FROM products p
@@ -138,12 +160,14 @@ def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int, me
     batches = conn.execute(
         """SELECT b.*,
                   a.name AS added_by_name,
-                  r.name AS resolved_by_name
+                  r.name AS resolved_by_name,
+                  e.name AS edited_by_name
              FROM batches b
         LEFT JOIN users a ON a.id = b.added_by
         LEFT JOIN users r ON r.id = b.resolved_by
+        LEFT JOIN users e ON e.id = b.edited_by
             WHERE b.product_id = ?
-         ORDER BY b.status IN ('pulled','sold'), b.expiry_date""",
+         ORDER BY b.expiry_date""",
         (product_id,),
     ).fetchall()
 
@@ -157,38 +181,33 @@ def _detail_page(request: Request, conn: sqlite3.Connection, product_id: int, me
         resolutions=RESOLUTIONS,
         today=dt.date.today().isoformat(),
         message=message,
+        editing=editing,
     )
 
 
-@router.post("/products/{product_id}/category")
-def set_category(
+@router.post("/products/{product_id}/edit")
+def edit_product(
     request: Request,
     product_id: int,
+    name: str = Form(""),
     category: str = Form(""),
+    photo: UploadFile | None = File(None),
     conn: sqlite3.Connection = Depends(get_conn),
     user: dict = Depends(current_user),
 ):
-    """One category per barcode, so this reaches every batch of it at once."""
-    category_id = resolve_category(conn, category, user["id"])
-    conn.execute("UPDATE products SET category_id = ? WHERE id = ?", (category_id, product_id))
-    conn.commit()
-    return RedirectResponse(f"/products/{product_id}", status_code=303)
+    """Everything editable about a product, in one form.
 
+    Replaced the separate category and photo routes on 13 Aug. The screen used
+    to show both pickers permanently, so after saving a category the picker sat
+    there redisplaying the value and read like unfinished work rather than a
+    saved fact. One Edit toggle, one form, one Save.
 
-@router.post("/products/{product_id}/photo")
-def set_photo(
-    request: Request,
-    product_id: int,
-    photo: UploadFile = File(...),
-    conn: sqlite3.Connection = Depends(get_conn),
-    user: dict = Depends(current_user),
-):
-    """Attach a photo to the barcode. Never required, and it backfills.
-
-    The browser has usually shrunk this already (see static/js/photo.js), so
-    what arrives is normally well under a megabyte. Pillow runs regardless —
-    the resize is the guarantee, the browser side is only there to keep four
-    megabytes off the shop WiFi.
+    **Renaming is deliberate**, and this is where iteration 1's open question got
+    settled: staff can rename a product. The imported names stay as they are by
+    default because staff recognise them, nothing renames automatically, and
+    there is no bulk tidy-up — but a name typed wrong at 7am can be corrected.
+    The barcode is not editable: that is the product's identity, and a wrong one
+    is a different product.
     """
     product = conn.execute(
         "SELECT id, barcode, image_path FROM products WHERE id = ?", (product_id,)
@@ -196,27 +215,44 @@ def set_photo(
     if product is None:
         raise HTTPException(status_code=404)
 
-    # Read synchronously: this route resizes an image, and a sync route runs
-    # in the threadpool instead of blocking the event loop while it does.
-    data = photo.file.read()
-    if not data:
-        return RedirectResponse(f"/products/{product_id}", status_code=303)
-    if len(data) > photos.MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="That image is too big")
+    name = clean_name(name)
+    if not name:
+        return _detail_page(request, conn, product_id, editing=True,
+                            message="Give the product a name.")
 
-    try:
-        stored, _size = photos.save(
-            data,
-            product["barcode"],
-            max_px=int(setting(conn, "image_max_px", "800")),
-            quality=int(setting(conn, "image_quality", "72")),
-        )
-    except OSError:
-        # Not an image, or one Pillow cannot read. Say so on the page rather
-        # than showing a stack trace to someone holding an iPad.
-        return _detail_page(request, conn, product_id, message="That file was not an image.")
+    # One category per barcode, so this reaches every batch of it at once.
+    category_id = resolve_category(conn, category, user["id"])
+    conn.execute(
+        "UPDATE products SET name = ?, category_id = ? WHERE id = ?",
+        (name, category_id, product_id),
+    )
 
-    conn.execute("UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id))
+    # Read synchronously: this route resizes an image, and a sync route runs in
+    # the threadpool instead of blocking the event loop while it does.
+    data = photo.file.read() if photo is not None else b""
+    if data:
+        if len(data) > photos.MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="That image is too big")
+        try:
+            stored, _size = photos.save(
+                data,
+                product["barcode"],
+                max_px=int(setting(conn, "image_max_px", "800")),
+                quality=int(setting(conn, "image_quality", "72")),
+            )
+        except OSError:
+            # Not an image, or one Pillow cannot read. Say so on the page rather
+            # than showing a stack trace to somebody holding an iPad.
+            #
+            # The name and category go with it: one form, one save. The rollback
+            # is explicit rather than load-bearing — get_conn closes without
+            # committing, which discards them anyway — but it says so, and it is
+            # what keeps this correct if a commit is ever added above.
+            conn.rollback()
+            return _detail_page(request, conn, product_id, editing=True,
+                                message="That file was not an image.")
+        conn.execute("UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id))
+
     conn.commit()
     return RedirectResponse(f"/products/{product_id}", status_code=303)
 
@@ -227,13 +263,15 @@ def resolve_batch(
     product_id: int,
     batch_id: int,
     status: str = Form(...),
+    next: str = Form(""),
     conn: sqlite3.Connection = Depends(get_conn),
     user: dict = Depends(current_user),
 ):
-    """Mark a batch discounted, pulled or sold.
+    """Mark a batch discounted — the only resolution there is.
 
-    An update, never a delete: waste has to stay reviewable, and the row keeps
-    who resolved it and when.
+    The other ending is deletion, which is `delete_batch` below. 'pulled' and
+    'sold' were removed on 13 Aug; a status this does not recognise is refused
+    rather than written, and the CHECK constraint is the backstop.
     """
     if status not in RESOLUTIONS:
         raise HTTPException(status_code=400, detail="Unknown status")
@@ -244,4 +282,125 @@ def resolve_batch(
         (status, user["id"], batch_id, product_id),
     )
     conn.commit()
+    return RedirectResponse(_back(next, product_id), status_code=303)
+
+
+@router.post("/products/{product_id}/batches/{batch_id}/full-price")
+def undiscount_batch(
+    request: Request,
+    product_id: int,
+    batch_id: int,
+    next: str = Form(""),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Put a discounted batch back to full price.
+
+    Added 13 Aug, after the iPad session: discounting is one tap and people will
+    do it to the wrong row, so it needs an undo. It is not a deletion — the item
+    is still on the shelf, it just is not marked down any more.
+
+    The resolution is cleared rather than recorded as a second event. `resolved_by`
+    means "who discounted this", and a batch that is no longer discounted has
+    nobody who discounted it. Who added it is untouched, and if the mistake is
+    worth attributing, the Excel export still carries every row.
+    """
+    conn.execute(
+        "UPDATE batches SET status = 'active', resolved_by = NULL, resolved_at = NULL "
+        "WHERE id = ? AND product_id = ? AND status = 'discounted'",
+        (batch_id, product_id),
+    )
+    conn.commit()
+    return RedirectResponse(_back(next, product_id), status_code=303)
+
+
+@router.post("/products/{product_id}/batches/{batch_id}/date")
+def edit_batch_date(
+    request: Request,
+    product_id: int,
+    batch_id: int,
+    expiry_date: str = Form(""),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Correct a date that was saved wrong.
+
+    Deleting and rescanning already recovered from this, so what editing buys is
+    the history that a delete throws away: who first recorded the batch, and
+    when. Those stay, and the correction is attributed on top with
+    `edited_by` / `edited_at`.
+
+    It goes through the same two checks an add does, from app/catalogue.py, so
+    there is one implementation of each:
+
+      - `parse_expiry` — no US format, and an implausible year is refused
+      - `live_batch` — moving a date onto one the product already has live is
+        refused exactly as adding it would be, and `idx_batches_unique_live` is
+        still the backstop underneath
+    """
+    batch = conn.execute(
+        "SELECT id, expiry_date FROM batches WHERE id = ? AND product_id = ?",
+        (batch_id, product_id),
+    ).fetchone()
+    if batch is None:
+        raise HTTPException(status_code=404)
+
+    expiry, problem = parse_expiry(expiry_date)
+    if problem:
+        return _detail_page(request, conn, product_id, message=problem)
+
+    # Excluding this batch: saving the date it already has is a no-op, not a
+    # clash with itself.
+    clash = live_batch(conn, product_id, expiry.isoformat(), exclude_id=batch_id)
+    if clash:
+        return _detail_page(
+            request, conn, product_id,
+            message=f"Already tracked — expires {au_date(clash['expiry_date'])}.",
+        )
+
+    try:
+        conn.execute(
+            "UPDATE batches SET expiry_date = ?, edited_by = ?, edited_at = datetime('now') "
+            "WHERE id = ? AND product_id = ?",
+            (expiry.isoformat(), user["id"], batch_id, product_id),
+        )
+    except sqlite3.IntegrityError:
+        # The index caught it. Same words either way — nobody needs to know
+        # which layer noticed.
+        conn.rollback()
+        return _detail_page(
+            request, conn, product_id,
+            message=f"Already tracked — expires {au_date(expiry)}.",
+        )
+
+    conn.commit()
     return RedirectResponse(f"/products/{product_id}", status_code=303)
+
+
+@router.post("/products/{product_id}/batches/{batch_id}/delete")
+def delete_batch(
+    request: Request,
+    product_id: int,
+    batch_id: int,
+    next: str = Form(""),
+    conn: sqlite3.Connection = Depends(get_conn),
+    user: dict = Depends(current_user),
+):
+    """Really delete the batch. The row goes.
+
+    This is the second of a batch's two endings, and it is a hard delete by
+    decision: keeping a record of everything ever removed only grows, on a
+    laptop nobody prunes, and the shop never used the statuses that did it.
+    Take the Excel export if a snapshot of history is wanted.
+
+    The product is never deleted, not even when this was its last batch.
+
+    Whether staff were asked to confirm first is a question for the screen, not
+    for here — see `needs_confirmation`. By the time this route runs, the
+    decision has been made.
+    """
+    conn.execute(
+        "DELETE FROM batches WHERE id = ? AND product_id = ?", (batch_id, product_id)
+    )
+    conn.commit()
+    return RedirectResponse(_back(next, product_id), status_code=303)

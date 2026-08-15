@@ -50,14 +50,52 @@ def test_discounted_still_counts_as_live(db, sample):
                    (product, date))
 
 
-def test_a_date_can_repeat_once_resolved(db, sample):
-    """Stock cleared in March can legitimately recur in September."""
+def test_a_date_can_repeat_once_the_batch_is_deleted(db, sample):
+    """Stock cleared in March can legitimately recur in September.
+
+    Rewritten 13 Aug. This used to park a 'pulled' row on the date and prove the
+    partial index let the date be reused. There is no resolved-but-present status
+    any more, so the way a date comes free is deletion — and a deleted row is
+    simply not there, which is why the index can stay partial and still be right.
+    """
     product = sample["products"]["monster"]
     date = days(62)
-    db.execute("INSERT INTO batches (product_id, expiry_date, status) VALUES (?, ?, ?)",
-               (product, date, "pulled"))
+    first = db.execute(
+        "INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)", (product, date)
+    ).lastrowid
+
+    # Still live, so the date is taken and the guard says so.
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)",
+                   (product, date))
+
+    db.execute("DELETE FROM batches WHERE id = ?", (first,))
     db.execute("INSERT INTO batches (product_id, expiry_date) VALUES (?, ?)",
                (product, date))  # must not raise
+
+
+def test_the_duplicate_check_can_exclude_the_row_being_edited(db, sample):
+    """`live_batch(exclude_id=...)`, which is what makes editing a date possible.
+
+    Tested here rather than through the screen because both layers deliberately
+    produce the same message — the app catches the duplicate first, the index
+    backstops it, and "nobody needs to know which layer noticed". From outside
+    the route the two are indistinguishable, so the app-level check is pinned
+    directly.
+    """
+    from app.catalogue import live_batch
+
+    product = sample["products"]["curly"]
+    edge = sample["batches"]["due_edge"]        # +7
+    taken = days(1)                             # the discounted batch's date
+
+    # Moving +7 onto +1 collides with the other batch.
+    assert live_batch(db, product, taken, exclude_id=edge) is not None
+
+    # Saving +7 back onto +7 finds only itself, which is not a collision.
+    assert live_batch(db, product, days(7), exclude_id=edge) is None
+    # And without the exclusion it does find itself — the bug this guards.
+    assert live_batch(db, product, days(7)) is not None
 
 
 def test_same_date_different_products_is_fine(db, sample):
@@ -336,16 +374,196 @@ def test_synchronous_is_full(db):
     assert db.execute("PRAGMA synchronous").fetchone()[0] == 2
 
 
+def test_the_database_path_can_be_pointed_elsewhere(tmp_path, monkeypatch):
+    """`TTD_DB`, the sibling of `TTD_PHOTO_DIR`. Unset in production.
+
+    Added so the LAN test server can run against a copy of the shop's data. The
+    actions the iPad session exercises are a real delete and a real discount, and
+    without this the only way to try them on realistic data was to move
+    data/tecoma.db aside by hand and hope to put it back.
+    """
+    import importlib
+
+    import scripts.init_db as init_db
+
+    # Unset, it resolves to the shop's file — the production path.
+    monkeypatch.delenv("TTD_DB", raising=False)
+    importlib.reload(init_db)
+    assert init_db.DB_PATH == init_db.ROOT / "data" / "tecoma.db"
+
+    # Set, everything that goes through connect() follows it.
+    elsewhere = tmp_path / "copy.db"
+    monkeypatch.setenv("TTD_DB", str(elsewhere))
+    importlib.reload(init_db)
+    assert init_db.DB_PATH == elsewhere
+
+    conn = init_db.connect()
+    conn.execute("CREATE TABLE probe (x INTEGER)")
+    conn.commit()
+    conn.close()
+    assert elsewhere.exists(), "connect() wrote somewhere else entirely"
+
+    # Leave the module as the rest of the suite expects to find it.
+    monkeypatch.delenv("TTD_DB", raising=False)
+    importlib.reload(init_db)
+
+
 def test_barcodes_are_unique(db, sample):
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
                    ("9300601234567", "A different product, same barcode"))
 
 
-def test_batch_status_is_constrained(db, sample):
+@pytest.mark.parametrize("status", ["gone", "pulled", "sold", "Active", ""])
+def test_batch_status_is_constrained(db, sample, status):
+    """Two statuses, not four. 'pulled' and 'sold' are now invalid values.
+
+    They were removed on 13 Aug because the shop never used either — 1757
+    active and 583 pulled came from the import, zero sold, zero discounted — and
+    because a record of every item ever removed only grows on a laptop nobody
+    prunes. This is the backstop; app/routes/products.py refuses them first.
+    """
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("INSERT INTO batches (product_id, expiry_date, status) "
-                   "VALUES (?, ?, ?)", (sample["products"]["monster"], days(67), "gone"))
+                   "VALUES (?, ?, ?)", (sample["products"]["monster"], days(67), status))
+
+
+def test_a_batch_has_exactly_two_endings(db, sample):
+    """Discounted, or deleted. Nothing else is representable."""
+    import re
+
+    ddl = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='batches'"
+    ).fetchone()[0]
+    # Just the CHECK clause: sqlite_master keeps the comments too, and those
+    # explain what 'pulled' and 'sold' were, so searching the whole DDL finds
+    # the words it is meant to prove absent.
+    clause = re.search(r"CHECK\s*\(\s*status\s+IN\s*\(([^)]*)\)", ddl, re.I)
+    assert clause, f"no status CHECK found in:\n{ddl}"
+    values = {v.strip().strip("'\"") for v in clause.group(1).split(",")}
+    assert values == {"active", "discounted"}, values
+
+
+def test_products_are_not_attributed_to_a_person(db):
+    """A batch is something somebody did; a product is a fact about a barcode.
+
+    `added_by` and `resolved_by` stay on batches — they are why PINs exist.
+    """
+    columns = [c[1] for c in db.execute("PRAGMA table_info(products)")]
+    assert "created_by" not in columns
+    batch_columns = [c[1] for c in db.execute("PRAGMA table_info(batches)")]
+    assert "added_by" in batch_columns and "resolved_by" in batch_columns
+
+
+# The delete confirmation asks only when the item is still good AND still full
+# price. Anything else, and a decision about that item has already been made.
+
+@pytest.mark.parametrize("status,offset,expected", [
+    ("active", 4, True),        # still good, full price — ask
+    ("active", 1, True),
+    ("active", 0, True),        # expires today, still sellable — ask
+    ("active", -1, False),      # past its date — no question, it is being pulled
+    ("active", -30, False),
+    ("discounted", 4, False),   # already decided about, and marked down
+    ("discounted", 0, False),
+    ("discounted", -1, False),
+])
+def test_the_delete_confirmation_rule(status, offset, expected):
+    from app.catalogue import needs_confirmation
+
+    assert needs_confirmation(status, days(offset)) is expected
+
+
+def test_the_confirmation_counts_whole_days(db, sample):
+    from app.catalogue import days_until
+
+    assert days_until(days(4)) == 4
+    assert days_until(days(0)) == 0
+    assert days_until(days(-3)) == -3
+    assert days_until("not a date") is None
+
+
+# ------------------------------------------------------------- the barcode rule
+#
+# Digits only, 6 to 18 of them, after stripping the gun's AIM identifier.
+# Decided 13 Aug: a product is never deleted, so a barcode typed as a word is
+# permanent. Two layers, and both are tested — app/catalogue.py produces the
+# sentence staff read, the CHECK constraint makes it impossible by any route.
+
+@pytest.mark.parametrize("value", [
+    "cool ridge water",                  # the actual bug: a typed name
+    "https://qrco.de/bdeRvm",            # a marketing QR, 5 of these are in the export
+    "www.ausbev.com.au",
+    "12345",                             # 5 digits, under the floor
+    "1" * 19,                            # 19, over the ceiling
+    "1930083008300830083008300830083008300830",   # the real 40-digit gun misfire
+    "93006 01234567",                    # embedded space
+    "9300601234567x",
+    "",
+    "   ",
+])
+def test_the_barcode_rule_refuses(value):
+    from app.catalogue import parse_barcode
+
+    barcode, problem = parse_barcode(value)
+    assert barcode == "", f"{value!r} was accepted"
+    assert problem, f"{value!r} was refused with no reason to show anybody"
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("9300601234567", "9300601234567"),      # ordinary EAN-13
+    ("0000001051117", "0000001051117"),      # leading zeros are significant
+    ("123456", "123456"),                    # 6, the floor
+    ("1" * 18, "1" * 18),                    # 18, the ceiling
+    ("  9300601234567  ", "9300601234567"),  # whitespace from the gun
+    ("9300601234567\r\n", "9300601234567"),  # the gun's trailing newline
+    ("]C10118721274620198", "0118721274620198"),   # AIM identifier stripped
+    ("]E09300601234567", "9300601234567"),
+])
+def test_the_barcode_rule_accepts_and_normalises(value, expected):
+    """The prefix is the gun naming the symbology, not part of the code."""
+    from app.catalogue import parse_barcode
+
+    barcode, problem = parse_barcode(value)
+    assert not problem, f"{value!r} was refused: {problem}"
+    assert barcode == expected
+
+
+def test_the_barcode_check_constraint_is_the_backstop(db, sample):
+    """The app checks first; this is what makes it impossible another way."""
+    for value in ("cool ridge water", "https://qrco.de/bdeRvm", "12345", "1" * 19):
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+                       (value, "Should never exist"))
+
+
+def test_the_two_barcode_layers_agree_on_unicode_digits(db, sample):
+    """The subtle one. str.isdigit() is True for '٣' and '²'.
+
+    Had the app used it, those would pass the app and then hit the CHECK
+    constraint, so staff would get an IntegrityError page instead of a
+    sentence. The rule has to refuse the same things in both halves.
+    """
+    from app.catalogue import parse_barcode
+
+    for value in ("١٢٣٤٥٦٧٨", "9300601234567²", "½½½½½½"):
+        barcode, problem = parse_barcode(value)
+        assert problem, f"the app accepted {value!r}"
+        # And the database would have refused it too, so they cannot disagree.
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+                       (value, "Should never exist"))
+
+
+def test_a_gun_prefixed_scan_finds_the_existing_product(client, sample):
+    """Normalising on the lookup path too, or the gun invents a second product.
+
+    `sample` already holds 9300601234567. Scanning it with the prefix attached
+    must land on that product's date step, not the new-product form.
+    """
+    body = client.get("/scan?barcode=]C19300601234567").text
+    assert "Monster Ultra Zero 500ml" in body
+    assert "New barcode" not in body
 
 
 def test_deleting_a_product_removes_its_batches(db, sample):
@@ -413,18 +631,29 @@ def test_a_barcode_keeps_its_leading_zeros(db, sample):
     assert cell.number_format == "@", "without a text format Excel re-reads it"
 
 
-def test_a_scanner_prefixed_barcode_survives(db, sample):
-    """]C1... and QR URLs are in the real data. Neither is a number."""
-    for barcode, name in ((']C10118721274620198', "Gun Prefix Item"),
-                          ("https://qrco.de/bdeRvm", "QR Code Item")):
-        db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)", (barcode, name))
-        db.execute("INSERT INTO batches (product_id, expiry_date) "
-                   "SELECT id, ? FROM products WHERE barcode = ?", (days(21), barcode))
+def test_a_long_barcode_is_not_turned_into_a_number(db, sample):
+    """Rewritten 13 Aug, when the barcode rule made the old fixtures illegal.
+
+    This used to insert ']C10118721274620198' and a QR-code URL, because both
+    were in the real data. Neither can exist now — the CHECK constraint refuses
+    them and the migration cleared the ones that were there.
+
+    The risk it was guarding is not gone though, it moved: an 18-digit numeric
+    barcode is exactly what Excel turns into 1.11E+17. So the case is now the
+    longest barcode the rule allows, which is a stronger test than the old one
+    — ']C1...' was safe from Excel precisely because it was not a number.
+    """
+    longest = "1" * 18
+    db.execute("INSERT INTO products (barcode, name) VALUES (?, ?)",
+               (longest, "Eighteen Digit Item"))
+    db.execute("INSERT INTO batches (product_id, expiry_date) "
+               "SELECT id, ? FROM products WHERE barcode = ?", (days(21), longest))
     db.commit()
 
-    sheet = _export(db)
-    assert _row_for(sheet, "Gun Prefix Item")[1].value == ']C10118721274620198'
-    assert _row_for(sheet, "QR Code Item")[1].value == "https://qrco.de/bdeRvm"
+    cell = _row_for(_export(db), "Eighteen Digit Item")[1]
+    assert cell.value == longest
+    assert isinstance(cell.value, str), "as a number this is 1.11E+17"
+    assert cell.number_format == "@", "without a text format Excel re-reads it"
 
 
 def test_expiry_is_a_real_date_never_a_us_string(db, sample):
@@ -454,10 +683,16 @@ def test_timestamps_are_shifted_to_shop_time(db, sample):
 
 
 def test_a_date_only_stamp_is_not_shifted_into_a_time(db, sample):
-    """The 583 migrated rows carry a date, not a timestamp. +10h invents 10am."""
+    """A stamp that is a date, not a timestamp. +10h would invent 10am.
+
+    The 583 migrated rows this was written for are gone with the status change,
+    and the app always writes a full datetime('now'). Kept because the shift is
+    still applied to whatever is in the column, and a date-only value is exactly
+    the input that turns into a plausible-looking lie.
+    """
     import datetime as dt
 
-    db.execute("UPDATE batches SET status = 'pulled', resolved_at = ? WHERE id = ?",
+    db.execute("UPDATE batches SET status = 'discounted', resolved_at = ? WHERE id = ?",
                ("2026-03-02", sample["batches"]["due_soon"]))
     db.commit()
 

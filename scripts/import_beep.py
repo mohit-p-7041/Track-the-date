@@ -17,9 +17,11 @@ What it does with the data:
     so there is nothing to migrate. Staff assign categories as they rescan
     products during normal work.
 
-  * Rows already past their expiry date are imported as status 'pulled', with a
-    note recording that this was the migration and not a person. The stock is
-    long gone from the shelves; the records just never got cleared.
+  * Rows already past their expiry date on the import date are skipped. Amended
+    13 Aug: they used to arrive as status 'pulled', which no longer exists, and
+    the stock is long gone from the shelves anyway — only the records were never
+    cleared. This matches what scripts/migrate_statuses.py does to an existing
+    database, so a fresh import and a migrated one agree.
   * Staff named in 'Added User' are created as users so the audit trail carries
     over. They all get the same placeholder PIN — change it before go-live.
     There are no roles; everyone can do everything.
@@ -36,11 +38,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from app.catalogue import parse_barcode  # noqa: E402
 from app.security import hash_pin  # noqa: E402
 from scripts.init_db import DB_PATH, connect  # noqa: E402
 
 PLACEHOLDER_PIN = "1234"
-MIGRATION_NOTE = "Expired before migration — not verified"
 
 EXPECTED_HEADERS = ["Id", "Name", "Barcode", "Expiration Date", "Category", "Memo",
                     "Added User", "Added Date"]
@@ -125,6 +127,7 @@ def main() -> int:
     pairs: dict[tuple, dict] = {}           # (barcode, date) -> batch info
     staff: set[str] = set()
     skipped: list[tuple[int, str]] = []
+    refused_barcodes: dict[str, int] = defaultdict(int)   # raw barcode -> rows
 
     for n, row in enumerate(rows, start=2):
         barcode = _clean_barcode(row["Barcode"])
@@ -134,6 +137,20 @@ def main() -> int:
         if not barcode:
             skipped.append((n, "no barcode"))
             continue
+
+        # The barcode rule, from app/catalogue.py so there is one copy of it.
+        # Added 13 Aug with the CHECK constraint: without this the importer
+        # dies on the export's ten non-numeric barcodes, and the laptop deploy
+        # runs the importer rather than copying the database.
+        #
+        # This normalises before it judges, so the gun's ']C1' rows are
+        # recovered under their real digits rather than dropped.
+        barcode, refused = parse_barcode(barcode)
+        if refused:
+            refused_barcodes[_clean_barcode(row["Barcode"])] += 1
+            skipped.append((n, f"barcode refused — {refused}"))
+            continue
+
         if not expiry:
             skipped.append((n, "unreadable expiry date"))
             continue
@@ -166,14 +183,19 @@ def main() -> int:
     # ------------------------------------------------------------- report
     print(f"Read {len(rows)} rows from {args.xlsx.name}\n")
     print(f"  unique products (barcodes) : {len(products)}")
-    print(f"  batches to create          : {len(pairs)}")
-    print(f"    already expired -> pulled: {expired}")
-    print(f"    still live               : {len(pairs) - expired}")
+    print(f"  batches to create          : {len(pairs) - expired}")
+    print(f"    already expired, skipped : {expired}")
     print(f"  duplicate rows collapsed   : {merged}")
     print(f"  staff found                : {sorted(staff)}")
     print(f"  rows skipped               : {len(skipped)}")
     for n, why in skipped[:10]:
         print(f"      row {n}: {why}")
+    if refused_barcodes:
+        rows_lost = sum(refused_barcodes.values())
+        print(f"  barcodes refused by the rule: {len(refused_barcodes)}"
+              f" ({rows_lost} rows) — digits only, 6 to 18")
+        for raw, count in sorted(refused_barcodes.items(), key=lambda kv: -kv[1]):
+            print(f"      {raw[:40]!r}: {count} row(s)")
     if name_conflicts:
         print(f"  barcodes with >1 name      : {len(name_conflicts)} (first seen wins)")
         for bc, names in list(name_conflicts.items())[:10]:
@@ -216,7 +238,17 @@ def main() -> int:
         created = 0
         already = 0
         for (barcode, expiry), info in pairs.items():
-            status = "pulled" if dt.date.fromisoformat(expiry) < today else "active"
+            # Already expired when the export was taken, so it is not on the
+            # shelf: skipped, not imported. Amended 13 Aug with the status
+            # change — these used to arrive as 'pulled', a status that no longer
+            # exists, and importing them as 'active' instead would drop 581
+            # items nobody has seen in months onto the Due screen.
+            #
+            # This is deliberately the same outcome the migration produces on
+            # the existing database, so a fresh import on the shop laptop and
+            # the migrated dev copy hold the same rows.
+            if dt.date.fromisoformat(expiry) < today:
+                continue
 
             # Can't lean on INSERT OR IGNORE here: the unique index is partial
             # (live rows only) by design, so re-importing would duplicate every
@@ -233,19 +265,12 @@ def main() -> int:
             added_at = (added_at.isoformat(sep=" ", timespec="seconds")
                         if isinstance(added_at, dt.datetime) else None)
 
-            # resolved_by is deliberately left NULL on pre-expired rows: nobody
-            # confirmed these, so don't put a name against them.
-            note = info["note"]
-            if status == "pulled":
-                note = f"{note}. {MIGRATION_NOTE}" if note else MIGRATION_NOTE
-
             conn.execute(
                 """INSERT INTO batches
-                   (product_id, expiry_date, note, status, added_by, added_at, resolved_at)
-                   VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)""",
-                (product_ids[barcode], expiry, note, status,
-                 user_ids.get(info["user"]), added_at,
-                 today.isoformat() if status == "pulled" else None),
+                   (product_id, expiry_date, note, status, added_by, added_at)
+                   VALUES (?, ?, ?, 'active', ?, COALESCE(?, datetime('now')))""",
+                (product_ids[barcode], expiry, info["note"],
+                 user_ids.get(info["user"]), added_at),
             )
             created += 1
 

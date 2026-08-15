@@ -5,9 +5,18 @@ paper and mark them discounted in the app afterwards, so the page is a list to
 write on rather than a screen to use: no navigation, no colour, and a blank
 column for the price.
 
-It shows exactly what the home screen shows — the same window, and past-date
-items included — because two definitions of "due" would eventually disagree
-and the shelf would follow the wrong one.
+The range is bounded at both ends — today to the cutoff. Amended 13 Aug, after
+the first iPad session found 27 past-date rows printing ahead of the week's
+work. Iteration 1 had this show exactly what the home screen shows, on the
+grounds that two definitions of "due" would disagree and the shelf would follow
+the wrong one. They are not two definitions of the same thing:
+
+- the Due screen is a worklist — everything unresolved, past included, because
+  a past-date item is the most urgent thing there is
+- this sheet is a pricing list — things still sellable that want a sticker this
+  week. A past-date item is not discounted, it is pulled off the shelf
+
+One definition of "due" survives; the sheet is a narrower question asked of it.
 """
 
 from __future__ import annotations
@@ -36,6 +45,9 @@ def sheet(
     today = dt.date.today()
     cutoff = (today + dt.timedelta(days=window)).isoformat()
 
+    # Bounded at both ends. An item expiring today still wants a sticker, so
+    # the lower bound is inclusive; anything already past its date is a pull,
+    # not a discount, and belongs on the Due screen instead.
     rows = conn.execute(
         """SELECT b.expiry_date, b.status, p.name, p.barcode,
                   c.name AS category
@@ -43,10 +55,11 @@ def sheet(
              JOIN products p ON p.id = b.product_id
         LEFT JOIN categories c ON c.id = p.category_id
             WHERE b.status IN ('active', 'discounted')
+              AND b.expiry_date >= ?
               AND b.expiry_date <= ?
          ORDER BY c.name IS NULL, c.name COLLATE NOCASE, b.expiry_date,
                   p.name COLLATE NOCASE""",
-        (cutoff,),
+        (today.isoformat(), cutoff),
     ).fetchall()
 
     # Uncategorised sorts last and is headed plainly. There is no

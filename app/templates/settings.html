@@ -20,12 +20,35 @@
 
   <h2 class="head">Categories</h2>
   <div class="card">
+    {# Rename and Delete sit on the same line, because they are the two things you
+       do to a category and putting Delete on its own row read like a separate
+       section. The count stays on the line too — it is what both actions carry. #}
     {% for c in categories %}
-      <form class="row-form" method="post" action="/settings/categories/{{ c.id }}">
-        <input class="field" name="name" value="{{ c.name }}" autocomplete="off">
-        <button class="btn btn-quiet" type="submit">Rename</button>
+      <div class="cat-row">
+        <form class="row-form" method="post" action="/settings/categories/{{ c.id }}">
+          <input class="field" name="name" value="{{ c.name }}" autocomplete="off">
+          <button class="btn btn-quiet" type="submit">Rename</button>
+        </form>
+
+        <details class="confirm">
+          <summary class="btn btn-quiet">Delete</summary>
+          <span class="confirm-body">
+            Are you sure you want to delete {{ c.name }}?
+            {% if c.products %}
+              {{ c.products }} product{{ '' if c.products == 1 else 's' }}
+              use{{ 's' if c.products == 1 else '' }} it, and
+              {{ 'it becomes' if c.products == 1 else 'they become' }} uncategorised.
+            {% else %}
+              Nothing is using it.
+            {% endif %}
+            <form method="post" action="/settings/categories/{{ c.id }}/delete">
+              <button class="btn btn-small" type="submit">Yes, delete</button>
+            </form>
+          </span>
+        </details>
+
         <span class="note">{{ c.products }} product{{ '' if c.products == 1 else 's' }}</span>
-      </form>
+      </div>
     {% endfor %}
 
     <form class="row-form" method="post" action="/settings/categories">
@@ -36,6 +59,8 @@
     <p class="note">
       Categories mostly appear by themselves as staff type them while scanning.
       Names are matched without case, so Drinks and drinks cannot both exist.
+      Deleting one leaves its products uncategorised &mdash; nothing is lost that
+      retyping the name will not restore.
     </p>
   </div>
 
@@ -112,9 +137,10 @@
   <div class="card">
     <a class="btn btn-quiet" href="/settings/export.xlsx">Export to Excel</a>
     <p class="note">
-      One sheet, one row per date &mdash; {{ batch_count }} of them, including
-      the ones already pulled, so waste can be looked at later. Filter the
-      Status column to see only what is still on the shelf.
+      One sheet, one row per date &mdash; {{ batch_count }} of them. A deleted
+      date is gone for good, so this file is the only record that keeps one.
+      Take it before a clear-out. Filter the Status column to separate
+      discounted stock from full price.
     </p>
     <p class="note">
       This is a copy for reading, not a backup. Exporting changes nothing, and

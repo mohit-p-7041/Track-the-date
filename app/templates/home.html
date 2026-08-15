@@ -1,22 +1,75 @@
 {% extends "base.html" %}
 {% block title %}Due{% endblock %}
 
+{# Buttons, not gestures. Swipe was built and removed on 13 Aug after the iPad
+   session: there is no way for a person to know where the threshold is, so every
+   swipe is a guess, and the two guesses here are "delete" and "discount". The
+   buttons say what they do.
+
+   Nothing on this screen needs JavaScript. The delete confirmation is a
+   <details> the server decides to render, so the rule lives in
+   needs_confirmation() and there is no script that could disagree with it. #}
 {% macro batch_list(rows) %}
   <ul class="items">
     {% for r in rows %}
       <li class="item">
-        {% if r.image_path %}
-          <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
-        {% else %}
-          <span class="thumb thumb-empty" aria-hidden="true"></span>
-        {% endif %}
-        <a class="item-body" href="/products/{{ r.product_id }}">
-          <span class="item-date">{{ r.expiry_date | au_date }}</span>
-          <span class="item-name">{{ r.name }}</span>
-          <span class="item-meta">
-            {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
+        {# The whole row is the link, thumbnail included — tapping the picture
+           did nothing before this, which is the first thing a thumb reaches. #}
+        <a class="item-row" href="/products/{{ r.product_id }}">
+          {% if r.image_path %}
+            <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
+          {% else %}
+            <span class="thumb thumb-empty" aria-hidden="true"></span>
+          {% endif %}
+          <span class="item-body">
+            <span class="item-date">
+              {{ r.expiry_date | au_date }}
+              {% if r.status == 'discounted' %}<span class="tag">Discounted</span>{% endif %}
+            </span>
+            <span class="item-name">{{ r.name }}</span>
+            <span class="item-meta">
+              {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
+            </span>
           </span>
         </a>
+
+        <span class="actions">
+          {% if r.status == 'active' %}
+            <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}">
+              <input type="hidden" name="status" value="discounted">
+              <input type="hidden" name="next" value="/">
+              <button class="btn btn-quiet btn-small" type="submit">Discount</button>
+            </form>
+          {% else %}
+            {# Marking something down by accident needs an undo, and it is not a
+               deletion — the item is still on the shelf at full price again. #}
+            <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}/full-price">
+              <input type="hidden" name="next" value="/">
+              <button class="btn btn-quiet btn-small" type="submit">Back to full price</button>
+            </form>
+          {% endif %}
+
+          {% if needs_confirmation(r.status, r.expiry_date, today) %}
+            {% set left = days_until(r.expiry_date, today) %}
+            <details class="confirm">
+              <summary class="btn btn-quiet btn-small">Delete</summary>
+              <span class="confirm-body">
+                This expires {% if left == 0 %}today{% elif left == 1 %}tomorrow
+                {%- else %}in {{ left }} days{% endif %}. Delete it?
+                <form method="post"
+                      action="/products/{{ r.product_id }}/batches/{{ r.id }}/delete">
+                  <input type="hidden" name="next" value="/">
+                  <button class="btn btn-small" type="submit">Yes, delete</button>
+                </form>
+              </span>
+            </details>
+          {% else %}
+            <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}/delete">
+              <input type="hidden" name="next" value="/">
+              <button class="btn btn-quiet btn-small" type="submit">Delete</button>
+            </form>
+          {% endif %}
+        </span>
       </li>
     {% endfor %}
   </ul>
@@ -54,3 +107,6 @@
   </p>
 
 {% endblock %}
+
+{# No scripts. The Due screen is the busiest read-only screen in the shop and
+   now needs none: the confirmation is a <details> the server chose to render. #}

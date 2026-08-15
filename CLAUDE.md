@@ -21,7 +21,9 @@ These were considered and settled. Don't "improve" them into something else.
 - **Product and Batch are separate.** A Product is a barcode. A Batch is one expiry date for
   that barcode. Photos and category live on the Product so they're stored once.
 - **A batch has two endings: discounted, or deleted.** Amended 13 Aug, replacing the four
-  statuses. `status` is `active` or `discounted` — nothing else. Anything else that happens to a
+  statuses, and **built** the same day — `scripts/migrate_statuses.py`, 2327→1746 batches, with
+  `products.created_by` dropped in the same rebuild. The importer skips already-expired rows for
+  the same reason, so a fresh import and a migrated database agree. `status` is `active` or `discounted` — nothing else. Anything else that happens to a
   batch is a deletion: the row goes, for real. `pulled` and `sold` are gone, because the shop
   never used either (1757 `active`, 583 `pulled` from the import, zero `sold`, zero `discounted`)
   and because a record of every item ever removed grows forever on a laptop nobody prunes. Take
@@ -33,10 +35,18 @@ These were considered and settled. Don't "improve" them into something else.
   decision about that item has already been made and staff are standing at the shelf holding it.
   Ask only for an `active` batch still in date: "this expires in N days, are you sure?". No JS
   `confirm()`; reveal the confirmation inline in the row.
-- **A barcode is digits only, 6–18 of them.** Amended 13 Aug. A leading AIM identifier (`]` plus
-  two characters) is stripped as transport noise from the gun; everything else must be digits or
-  it is refused. Typed words are the thing this exists to stop. The ten legacy rows that fail
-  this — QR-code URLs and one 40-digit gun misfire — were cleaned out when the rule landed.
+- **A barcode is digits only, 6–18 of them.** Amended 13 Aug, and **built** the same day. A
+  leading AIM identifier (`]` plus two characters) is stripped as transport noise from the gun;
+  everything else must be digits or it is refused. Typed words are the thing this exists to stop.
+  Two layers, deliberately: `parse_barcode()` in `app/catalogue.py` produces the sentence staff
+  read, and a `CHECK` constraint on `products.barcode` makes it impossible by any other route —
+  the same shape as `idx_batches_unique_live`. Never drop the constraint.
+  Normalise *before* judging: of the ten legacy rows that failed the rule, **two were `]C1…`
+  stuck to a real code and were recovered** (`golden gay time lamington`, `magnum almond`), and
+  **eight were deleted** — seven marketing URLs and one 40-digit gun misfire — taking 13 batches.
+  Ran 13 Aug via `scripts/migrate_barcodes.py`; 952→944 products, 2340→2327 batches.
+  Note that `str.isdigit()` is **not** the right test — it accepts `²` and `٣`, which the `CHECK`
+  refuses, and a rule whose halves disagree shows an IntegrityError instead of a message.
 - **PINs are accountability, not security.** 4 digits, LAN-only app. Don't add password
   complexity rules, lockouts, or session hardening. Do keep the audit trail accurate.
 - **No roles.** ~10 staff, one shop. Everyone can do everything, including adding categories and
@@ -57,14 +67,35 @@ These were considered and settled. Don't "improve" them into something else.
   when images arrive.
 - **No animation, no transitions.** Adding a product happens hundreds of times a week. Clean and
   fast beats polished. Optimise the add path above everything else.
+- **Buttons, not gestures.** Swipe-to-act was built on 13 Aug and removed the same day after the
+  iPad session: a person cannot see where the threshold is, so every swipe is a guess, and the
+  guesses were "delete" and "discount". Don't propose it again. The Due screen now carries no
+  JavaScript at all — the delete confirmation is a `<details>` the server chooses to render.
+- **A discount is undoable.** It is one tap, so it will land on the wrong row. "Back to full
+  price" clears the resolution rather than recording a second event: `resolved_by` means "who
+  discounted this", and a batch nobody discounted has nobody against it. A *deletion* is still
+  final — that is the asymmetry, and it is deliberate.
+- **A floating + is always in the bottom-right corner**, going to Scan. Adding a date is what this
+  app is for; it should never need a trip to the nav bar.
 - **On demand, not always on.** Staff double-click `start.bat` for a scan session (mainly
   weekends) and close the window after. No service, no auto-start. Backups therefore run at
-  startup — a nightly job would never fire.
+  startup — a nightly job would never fire. An opt-in exists and is **off** by default:
+  `python scripts/setup_laptop.py --autostart` drops the same shortcut in the Startup folder,
+  `--no-autostart` takes it out again. Don't make it the default without asking.
+- **One address, and it does not move.** `https://tecoma.local:8443` — a name, a reserved number,
+  and a fixed port, all three, because each covers the others' failures. Every iPad and the
+  scanner phone hold a home-screen icon with that URL baked into it, so a changed port or a
+  DHCP reshuffle is ten devices to walk round on a Saturday. The ports are constants in
+  `scripts/serve.py` with a test asserting them; the certificate is issued for the name *and*
+  the number (iOS resolves `.local`, Android does not); and `serve.py` warns at startup when the
+  certificate has stopped matching the machine, because that failure is otherwise silent and
+  looks like a broken app. Never move a port to dodge a conflict — find what took it.
 
 ## Layout
 
 ```
-start.bat       double-click launcher; picks HTTP or HTTPS automatically
+start.bat       double-click launcher for a session: finds Python, runs scripts/serve.py
+setup.bat       one-time laptop setup, safe to re-run: runs scripts/setup_laptop.py
 app/
   main.py         FastAPI app — wiring only: middleware, mounts, routers
   db.py           get_conn dependency — the only way a route opens the database
@@ -78,24 +109,36 @@ app/
   routes/         one module per area: login, home, scan, products, sheet, settings
   templates/      Jinja2 — base.html and one per screen
   static/         css, js (keypad, photo), vendor
+  static/icons/   the home-screen icon and manifest.json; drawn by make_icons.py
 tests/
   conftest.py     temp-database fixtures; never touches data/tecoma.db or data/photos
   test_screens.py routes render and show the right rows
   test_rules.py   the locked decisions, as executable tests
+  test_serve.py   the launcher: ports, certificate check, refusing to start twice
 data/
   tecoma.db       the database — never commit
   photos/         compressed product images — never commit
   backups/        snapshots written at startup — never commit
   exports/        spreadsheets written by export_xlsx.py — never commit
+  logs/           one file per day from serve.py, kept 14 days — never commit
   imports/        the beep Excel export
 scripts/
+  serve.py        the launcher: scheme, port, log, and the certificate warning
+  setup_laptop.py one-time setup: deps, database, certificate, firewall, desktop icon
+  make_icons.py   draws the home-screen icon; its outputs are committed
   init_db.py      create the database; also holds connect()
   import_beep.py  load the old app's Excel export
+  migrate_barcodes.py  one-off: put the barcode CHECK on an existing database
+  migrate_statuses.py  one-off: four statuses to two, and drop products.created_by
+  migrate_edit_columns.py  one-off: add batches.edited_by / edited_at (additive)
   check_db.py     sanity checks — run these
   backup.py       snapshot db + photos, keep last 7
   export_xlsx.py  every batch to one Excel sheet; the settings button calls this
   show_address.py print the URL for the iPads
 docs/
+  WINDOWS-SETUP.md  deploying to the shop laptop: address, certificate, firewall, icon
+  DEVICE-SETUP.md   the iPads and the Android scanner phone, including keyboard-wedge mode
+  STAFF-GUIDE.md    the one-page SOP for the shop — print it, it is for everyone
   BACKLOG.md      what to build next, in order, with acceptance criteria
   FUTURE-IDEAS.md wanted eventually, not scheduled — parked, not promised
   ITERATION-1.md  what the first session built, and the decisions it took
@@ -108,6 +151,11 @@ docs/
 ## Commands
 
 ```bash
+setup.bat                                                    # shop laptop, once (and re-runnable)
+start.bat                                                    # shop laptop, every session
+python scripts/serve.py --http                               # force plain http on 8000
+python scripts/setup_laptop.py --dry-run                     # what setup.bat would change
+python scripts/make_icons.py                                 # redraw the home-screen icon
 pip install -r requirements.txt -r requirements-dev.txt      # dev machine
 pytest                                                       # run before committing
 python scripts/init_db.py                                    # create the database
@@ -115,7 +163,12 @@ python scripts/init_db.py --reset                            # destructive rebui
 python scripts/add_user.py "Name" 1234                       # first sign-in on a fresh database
 python scripts/add_user.py "Name" 4821 --reset               # forgotten PIN
 python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --dry-run
-python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx
+python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10
+python scripts/migrate_barcodes.py --db /tmp/copy.db --dry-run  # barcode rule, on a copy first
+python scripts/migrate_barcodes.py                           # then for real (asks first)
+python scripts/migrate_statuses.py --db /tmp/copy.db --dry-run  # two statuses, on a copy first
+python scripts/migrate_statuses.py                           # then for real (asks first)
+python scripts/migrate_edit_columns.py                       # edited_by / edited_at; additive
 python scripts/check_db.py                                   # run before committing
 python scripts/check_db.py --expect-import                   # also assert the import numbers
 python scripts/backup.py                                     # snapshot db + photos
@@ -143,7 +196,10 @@ explicitly and update it deliberately.
   index is the backstop. Never drop it. It is partial (`WHERE status IN (...)`) for historical
   reasons; with only two live statuses left it now covers every row, and that is correct — a
   deleted batch is gone, so its date is free to be used again with no exclusion needed.
-- Every write that a person initiates records `added_by` / `resolved_by`.
+- Every write that a person initiates records who: `added_by` when a batch is created,
+  `resolved_by` when it is discounted, `edited_by` / `edited_at` when its date is corrected. The
+  correction sits *alongside* who added it rather than replacing them — keeping that history is
+  the reason editing a date exists instead of delete-and-rescan.
 - **Always open the database via `scripts.init_db.connect()`**, never `sqlite3.connect()`
   directly. `foreign_keys` and `synchronous` are per-connection pragmas — a raw connect silently
   drops both, which loses referential integrity and crash durability.
@@ -160,16 +216,37 @@ explicitly and update it deliberately.
   The laptop can sleep at any moment, and anything not yet posted is gone.
 - Images: resize client-side before upload, then Pillow to max 800px long edge, JPEG q72, EXIF
   stripped. Target under 80 KB. Filenames keyed to barcode, stored under `data/photos/`.
+- **Photos are served by a route, not a `StaticFiles` mount**, resolved per request from
+  `photos.photo_dir()`. A mount binds its directory once at import, which is how the hardcoded
+  path and `TTD_PHOTO_DIR` were able to disagree without a single test noticing. Don't turn it
+  back into a mount.
+- **Taking a photo does not submit the form.** The camera fills a field in; `Save` saves. It used
+  to upload immediately, which dropped the person out of edit mode and committed a name they were
+  still typing.
 
 ## The data
 
 The beep export at `data/imports/beep_2026-08-10.xlsx` is real production data: 2343 rows,
-952 unique products, 2 staff accounts. It imports cleanly to 2340 batches — see
-`docs/DATA-NOTES.md`. Use it for realistic testing rather than inventing fixtures.
+2 staff accounts. It imports to **944 products and 1746 batches** — see `docs/DATA-NOTES.md`.
+Use it for realistic testing rather than inventing fixtures.
+
+Pin the date to reproduce those numbers, or the expired/live split moves with the calendar:
+`python scripts/import_beep.py data/imports/beep_2026-08-10.xlsx --today 2026-08-10`.
+Without the pin the counts still import fine, but `check_db.py --expect-import` will disagree on
+the pre-expired total (581 as at the export's date, 608 by 13 Aug).
+
+Was 952 products and 2340 batches before 13 Aug. Two changes that day: the barcode rule refuses
+8 barcodes and 13 rows with them, and the status change means rows already expired on the import
+date are **skipped rather than imported** — 581 of them. 952 − 8 = 944 products;
+2340 − 13 − 581 = 1746 batches.
 
 Every product imports with `category_id` NULL — the old app only ever had one category ('All'),
-so there was nothing to migrate. 583 batches were already expired at import and carry a note
-saying so; leave them alone, staff clear that backlog as they rescan.
+so there was nothing to migrate. A product is created for every valid barcode even when all of
+its dates were expired, because a product is never deleted; some products therefore have zero
+batches, which is a normal state.
+
+The 27 `active` batches already past their date are **not** touched by either migration. They are
+real stock and the backlog staff clear on Saturday.
 
 Product names are messy in ways that matter for search: inconsistent case
 (`C/RIDGE WATER 1L` vs `Cool Ridge Water 600ml`), trailing whitespace, curly apostrophes, one
@@ -180,17 +257,20 @@ whitespace-tolerant. Don't "clean" the names in the database — staff recognise
 
 Two layers. Run both.
 
-**`pytest`** — 122 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 291 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
 - `tests/test_screens.py` — routes return 200, render, and show the right rows. This is the layer
   `check_db.py` cannot provide: it catches template errors, wrong queries, off-by-one windows.
+- `tests/test_serve.py` — the launcher, the one piece of this staff touch directly. The ports
+  can't drift, the certificate check still finds an address inside a real certificate, and a
+  second double-click says "already running" rather than throwing a traceback at somebody.
 - `tests/test_rules.py` — the locked decisions as tests. Not "nobody has broken this yet" but
   "this cannot be done": the duplicate guard raises, categories collide case-insensitively,
   `au_date` never emits US format or a leading zero.
 
-**`python scripts/check_db.py`** — 12 structural checks against the real database, or 16 with
+**`python scripts/check_db.py`** — 14 structural checks against the real database, or 18 with
 `--expect-import`, which also asserts the original migration numbers.
 
 ### Adding tests

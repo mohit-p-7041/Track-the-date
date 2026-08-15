@@ -10,10 +10,11 @@ laptop. One implementation either way.
 This is for the manager, not for safety — the startup backup is what protects
 the data (SPEC §9). Nothing here writes to the database.
 
-Every batch is included, resolved ones as well as live. `CLAUDE.md` keeps
-pulled and sold rows rather than deleting them "so waste can be reviewed
-later", and a spreadsheet is where that review would actually happen. Filter
-the Status column to get back to what is still on the shelf.
+Every batch is included. Amended 13 Aug: there is no longer a resolved-but-
+present row to include, because a batch now ends either as `discounted` — still
+on the shelf, still live — or as a real deletion. That makes this file the only
+place the shop's history is kept, so take it before either migration and keep
+it. Filter the Status column to separate discounted stock from full price.
 
 Four things about the file matter more than they look:
 
@@ -90,15 +91,13 @@ QUERY = """
  LEFT JOIN categories c  ON c.id  = p.category_id
  LEFT JOIN users ua      ON ua.id = b.added_by
  LEFT JOIN users ur      ON ur.id = b.resolved_by
-  ORDER BY b.status IN ('pulled', 'sold'),
-           b.expiry_date,
+  ORDER BY b.expiry_date,
            p.name COLLATE NOCASE
 """
-# Live rows first, then the resolved ones, each soonest-first. Sorting purely
-# by date puts 583 already-pulled rows above everything still on the shelf,
-# because they are the oldest — so the manager opens a 2,340-row file at the
-# part that no longer matters. Same "soonest first" as every screen, just with
-# the dealt-with half moved below.
+# Soonest first, the same as every screen. The old sort lifted live rows above
+# resolved ones, because 583 already-pulled rows were the oldest in the file and
+# put the manager's cursor on the part that no longer mattered. Those rows are
+# gone with the status change, so plain date order is now the useful order.
 
 
 def _as_date(value: str | None) -> dt.date | str | None:

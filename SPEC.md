@@ -221,7 +221,9 @@ Printed on the weekend, covering the week ahead.
 - Clean A4 print layout — no navigation, no colours that eat toner.
 - Staff walk the aisles with paper, tick items off, then mark them discounted in the app after.
 
-The same information is always live on the home screen. The print is for the aisle walk.
+The print is for the aisle walk; the home screen is always live. **Amended 13 Aug:** the sheet is
+the *sellable* part of what the home screen shows — bounded today to the cutoff. Past-date stock
+stays on the home screen's worklist, because it gets pulled off the shelf rather than discounted.
 
 ---
 
