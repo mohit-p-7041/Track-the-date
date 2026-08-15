@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser check</title>
+  <style>
+    body { font: 15px/1.4 sans-serif; margin: 0; padding: 12px; }
+    h1 { font-size: 17px; margin: 0 0 8px; }
+    #ua { font-size: 12px; word-break: break-all; background: #eee;
+          padding: 8px; border-radius: 4px; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td { padding: 4px 2px; border-bottom: 1px solid #ddd; }
+    td.v { text-align: right; font-weight: bold; width: 4em; }
+    .y { color: #00693c; }
+    .n { color: #b3261e; }
+  </style>
+</head>
+<body>
+  <h1>Track the Date — browser check</h1>
+  <div id="ua">reading…</div>
+  <table id="out"></table>
+
+  <script>
+    document.getElementById('ua').textContent =
+      navigator.userAgent + '  |  dpr=' + (window.devicePixelRatio || 1) +
+      '  |  viewport=' + document.documentElement.clientWidth + 'px';
+
+    // Each test returns true when the browser supports the feature.
+    function supportsProp(prop, value) {
+      try {
+        if (window.CSS && CSS.supports) { return CSS.supports(prop, value); }
+      } catch (e) {}
+      var el = document.createElement('div');
+      try { el.style[prop] = value; return el.style[prop] !== ''; } catch (e) { return false; }
+    }
+
+    // Flex gap needs a real layout test: CSS.supports('gap','1px') answers for
+    // grid and says yes on browsers where flex gap does nothing.
+    function supportsFlexGap() {
+      var f = document.createElement('div');
+      f.style.display = 'flex';
+      f.style.flexDirection = 'column';
+      f.style.rowGap = '20px';
+      f.appendChild(document.createElement('div'));
+      f.appendChild(document.createElement('div'));
+      document.body.appendChild(f);
+      var ok = f.scrollHeight >= 20;
+      f.parentNode.removeChild(f);
+      return ok;
+    }
+
+    var tests = [
+      ['flexbox',              supportsProp('display', 'flex')],
+      ['flexbox gap',          supportsFlexGap()],
+      ['CSS grid',             supportsProp('display', 'grid')],
+      ['@supports',            !!(window.CSS && CSS.supports)],
+      ['custom properties',    supportsProp('--x', '1')],
+      ['env() insets',         supportsProp('padding', 'env(safe-area-inset-left)')],
+      ['aspect-ratio',         supportsProp('aspect-ratio', '4 / 3')],
+      ['position: sticky',     supportsProp('position', 'sticky')],
+      ['object-fit',           supportsProp('object-fit', 'cover')],
+      ['overflow-wrap',        supportsProp('overflow-wrap', 'anywhere')],
+      [':focus-visible',       (function () {
+          try { document.querySelector(':focus-visible'); return true; } catch (e) { return false; }
+      })()],
+      ['<details>',            'open' in document.createElement('details')],
+      ['SVG <use> sprite',     !!(document.createElementNS &&
+          document.createElementNS('http://www.w3.org/2000/svg', 'use'))],
+      ['input type=date',      (function () {
+          var i = document.createElement('input');
+          i.setAttribute('type', 'date');
+          return i.type === 'date';
+      })()],
+      ['camera (getUserMedia)', !!(navigator.mediaDevices &&
+          navigator.mediaDevices.getUserMedia)],
+      ['secure context',       window.isSecureContext === true]
+    ];
+
+    var rows = '';
+    var flags = [];
+    for (var i = 0; i < tests.length; i++) {
+      var ok = tests[i][1];
+      rows += '<tr><td>' + tests[i][0] + '</td><td class="v ' +
+              (ok ? 'y">yes' : 'n">NO') + '</td></tr>';
+      flags.push(tests[i][0].replace(/[^a-z]/gi, '') + '=' + (ok ? 1 : 0));
+    }
+    document.getElementById('out').innerHTML = rows;
+
+    // Report back to the laptop so the result lands in the server's access log
+    // and nobody has to photograph a screen and read it back. It is one GET to
+    // this same page with the answers in the query string; the response is
+    // thrown away. Same origin, same device, nothing leaves the shop network.
+    try {
+      new Image().src = '/static/check.html?report=1'
+        + '&ua=' + encodeURIComponent(navigator.userAgent)
+        + '&' + flags.join('&');
+    } catch (e) {}
+  </script>
+</body>
+</html>

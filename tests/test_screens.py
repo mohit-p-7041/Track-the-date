@@ -1842,6 +1842,49 @@ def test_static_assets_are_served(client):
     assert "text/css" in response.headers["content-type"]
 
 
+# ------------------------------------------------- the home screen button
+# The app is opened from an icon on an iPad's home screen, not by typing an
+# address. Everything below is what makes that icon a button rather than a
+# blurry screenshot of whichever page happened to be open when it was added.
+
+def test_the_home_screen_icon_exists_and_is_linked(anon_client):
+    """No apple-touch-icon and iOS uses a screenshot of the page as the button.
+
+    Signed out on purpose: an iPad is added to the home screen before anyone
+    signs in on it, so the icon has to be fetchable without a session.
+    """
+    body = anon_client.get("/login").text
+    assert '<link rel="apple-touch-icon" href="/static/icons/icon-180.png">' in body
+
+    response = anon_client.get("/static/icons/icon-180.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+
+
+def test_the_icon_is_labelled_with_the_app_and_not_the_page(anon_client):
+    """Without this iOS names the button after the page title, so the same
+    app lands on ten iPads as Due, Scan, Sign in and Products."""
+    assert '<meta name="apple-mobile-web-app-title" content="Track the Date">' in (
+        anon_client.get("/login").text
+    )
+
+
+def test_the_android_manifest_is_reachable_and_is_json(anon_client):
+    """The scanner phone's half of the same thing. Under /static because a
+    manifest is fetched without the session cookie — behind the middleware it
+    would come back as a redirect to /login and Chrome would use nothing."""
+    response = anon_client.get("/static/icons/manifest.json")
+    assert response.status_code == 200
+    assert "json" in response.headers["content-type"]
+
+    manifest = response.json()
+    assert manifest["start_url"] == "/"
+    assert manifest["scope"] == "/"          # or Chrome scopes it to /static/icons
+    assert manifest["display"] == "standalone"
+    for icon in manifest["icons"]:
+        assert anon_client.get(icon["src"]).status_code == 200
+
+
 def test_no_api_docs_exposed(client):
     """docs_url=None — staff should never land on FastAPI's Swagger page."""
     assert client.get("/docs").status_code == 404

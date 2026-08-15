@@ -727,3 +727,132 @@ def test_exporting_changes_nothing_in_the_database(db, sample):
     before = "\n".join(db.iterdump())
     build(db)
     assert "\n".join(db.iterdump()) == before
+
+
+# ------------------------------------------------------- the uplift, 14 Aug
+#
+# Colour does three jobs and urgency is not one of them: green commits, red
+# removes, yellow is a state and never an action. These hold that line.
+
+TEMPLATES = sorted((ROOT / "app" / "templates").glob("*.html"))
+BASE = ROOT / "app" / "templates" / "base.html"
+
+# A control, from its opening tag to its close. <summary> counts: the Delete
+# that opens a confirmation is one, and it has to be red like the rest.
+CONTROL = re.compile(r"<(button|summary|a)\b([^>]*)>(.*?)</\1>", re.DOTALL)
+
+
+def _controls(html: str):
+    """(attributes, visible label) for every button, summary and link."""
+    for _tag, attrs, inner in CONTROL.findall(html):
+        yield attrs, " ".join(re.sub(r"<[^>]+>", " ", inner).split())
+
+
+def test_delete_is_always_red_and_nothing_else_is(client, sample):
+    """Deleting a batch is the only thing in this app that cannot be undone.
+
+    A discount can be taken back — "Back to full price" clears it — but a
+    deleted row is gone for real, which is why it is the one red in the app
+    and why nothing else may borrow it. Staff had a solid red Delete in the
+    old app for months; this keeps that association rather than spending it.
+    """
+    product = sample["products"]["curly"]
+    for path in ("/", f"/products/{product}", "/settings"):
+        body = client.get(path).text
+        seen = 0
+        for attrs, label in _controls(body):
+            red = "btn-danger" in attrs
+            if label in ("Delete", "Yes, delete"):
+                assert red, f"{path}: {label!r} is not red"
+                seen += 1
+            else:
+                assert not red, f"{path}: {label!r} is red and should not be"
+        assert seen, f"{path}: no delete control rendered, so this proved nothing"
+
+
+def test_a_destructive_control_always_says_what_it_does(client, sample):
+    """An icon on its own is learned, not read.
+
+    Swipe-to-act was built and removed on 13 Aug: a person cannot see where an
+    invisible threshold is, so every swipe was a guess, and the two guesses
+    were "delete" and "discount". A bare trash can is the same mistake in a
+    different shape. Every red control keeps its word beside the glyph.
+    """
+    product = sample["products"]["curly"]
+    for path in ("/", f"/products/{product}", "/settings"):
+        for attrs, label in _controls(client.get(path).text):
+            if "btn-danger" in attrs:
+                assert re.search(r"[A-Za-z]", label), \
+                    f"{path}: a red control with no word on it — icon only"
+
+
+def test_every_icon_points_at_a_symbol_that_exists(client, sample):
+    """A typo in an icon name is silent: <use> just draws nothing.
+
+    So the button keeps its word and its box and loses only the glyph, which
+    is exactly the kind of thing nobody notices until a photo of the shop
+    screen turns up. Both directions: no reference without a symbol, and no
+    symbol nobody uses, because the sprite ships on every page.
+    """
+    defined = set(re.findall(r'<symbol id="(i-[a-z-]+)"', BASE.read_text(encoding="utf-8")))
+    assert defined, "no icons defined in base.html — the sprite went missing"
+
+    used = set()
+    for path in TEMPLATES:
+        used |= set(re.findall(r'href="#(i-[a-z-]+)"', path.read_text(encoding="utf-8")))
+
+    assert used - defined == set(), f"icons used with no symbol: {sorted(used - defined)}"
+    assert defined - used == set(), f"icons defined and never used: {sorted(defined - used)}"
+
+
+def test_an_icon_never_carries_an_aria_role(client, sample):
+    """`role` is a forbidden word on the settings screen, and the sprite is on
+    every page — so an ARIA role on an icon would fail a test three screens
+    away from the edit. The icons are decorative and say so with aria-hidden;
+    the word beside them is what a screen reader announces.
+    """
+    for path in TEMPLATES:
+        body = path.read_text(encoding="utf-8")
+        assert not re.search(r"\brole\s*=", body), f"{path.name} carries a role attribute"
+
+
+def test_yellow_marks_a_state_and_is_never_an_action():
+    """The discount sticker is the one saturated yellow in the app, and it
+    works because it is the only one. The moment a button takes that colour
+    the sticker stops being a state you can spot from down the aisle and
+    starts being decoration.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.DOTALL)
+    for block in re.findall(r"([^{}]+)\{([^}]*)\}", css):
+        selector, body = block[0].strip(), block[1]
+        if ".btn" in selector and "--pump" in body:
+            assert False, f"a button is wearing the sticker's yellow: {selector}"
+    assert "--pump" in css, "the sticker colour is gone entirely"
+
+
+def test_the_printed_sheet_still_costs_no_toner():
+    """A solid yellow sticker and a page of icons are free on glass and a
+    toner bill on paper. The sheet is printed every week.
+    """
+    css = CSS.read_text(encoding="utf-8")
+    block = css.split("@media print")[1]
+    assert ".tag-discount" in block, "the sticker prints as a solid fill"
+    assert re.search(r"\.tag,\s*\.tag-discount\s*\{[^}]*background:\s*none", block), \
+        "the sticker's background is not cleared for print"
+    assert re.search(r"\.icon\s*\{[^}]*display:\s*none", block), "icons print"
+
+
+def test_keyboard_focus_is_visible():
+    """The laptop has no touchscreen and gets driven by tab and enter during a
+    stocktake. Before the uplift nothing in the stylesheet styled focus at
+    all, so there was nothing to follow.
+
+    Anchored to the bare `:focus-visible`, not merely to some rule containing
+    it — the bar has its own `.bar :focus-visible` that swaps the colour, and
+    matching that one would let the app-wide rule be deleted unnoticed.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.DOTALL)
+    rule = re.search(r"(?:^|\})\s*:focus-visible\s*\{([^}]*)\}", css)
+    assert rule, "nothing in app.css gives every focusable thing a focus ring"
+    assert re.search(r"outline\s*:", rule.group(1)), \
+        f"focus is styled but not outlined: {rule.group(1)!r}"

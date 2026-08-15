@@ -252,13 +252,15 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
      sat on barcodes the new rule had already refused). Delete and Discount work from the product
      screen, with the confirmation revealed inline via `<details>` and no `confirm()`. Never
      deletes the product, even at zero batches. Done 13 Aug; 2327→1746 batches.
-   - `[x]` **Swipe on the Due screen.** Right→left deletes, left→right discounts. Done 13 Aug.
-     The buttons are always in the markup and do the work; `swipe.js` only decides that a finger
-     movement meant one of them, so the laptop and a JS-off browser behave identically. On the real
-     data all 83 rows carry both actions and exactly the 56 in-window ones ask before deleting.
-     **The gesture itself still wants a real iPad** — touch events cannot be driven from here, and
-     the direction pairing is held by a source assertion rather than by running the code, because a
-     JS test runner would mean npm and a build step.
+   - `[x]` **Swipe on the Due screen — built, then removed the same day.** Right→left deleted,
+     left→right discounted. It did not survive contact with a thumb: there is no way for a person
+     to see where the threshold is, so every swipe is a guess, and the two guesses here were
+     "delete" and "discount". `swipe.js` is deleted and the buttons that were the non-gesture path
+     are now the whole mechanism. The Due screen carries **no JavaScript at all** as a result — the
+     delete confirmation is a `<details>` the server chooses to render, so the rule stays in
+     `needs_confirmation()` where nothing can fail to load and take it with it.
+     **Do not propose gestures again.** Visible, labelled controls won, and that finding is the
+     reason icons added later sit beside their words rather than replacing them.
 4. `[x]` **Edit toggle on product detail.** One Edit toggle covering name, category and photo,
    **including renaming a product** — the decision iteration 1 left open, now settled. Done
    13 Aug. `POST /products/{id}/edit` replaced the separate `/category` and `/photo` routes, so
@@ -279,6 +281,34 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
 8. `[ ]` **The photo mount ignores `TTD_PHOTO_DIR`.** `app/main.py:35` hardcodes `data/photos`
    while `photos.py` honours the variable, so uploads and serving can disagree. Production is
    unaffected — both resolve the same when the variable is unset. After Saturday.
+9. `[x]` **A visual uplift, and one colour for Delete.** Done 14 Aug. The app worked and looked
+   like nothing in particular; it now looks like the shop. The whole change is CSS, Jinja and
+   hand-drawn inline SVG — no build step, no npm, no CDN, no motion.
+
+   **Colour does three jobs and urgency is not one of them: green commits, red removes, yellow is
+   a state and never an action.** Six tokens in `:root` — `--forecourt` `#00693c`, `--pump`
+   `#ffd400`, `--espresso` `#2b211c`, `--steam` `#6e6862`, `--reduced` `#b3261e`, `--counter`
+   `#f1f0ec`. `--reduced` is the red `.head-overdue` already used, promoted to carry every delete,
+   which is also the red staff had on Delete in the old app for months.
+
+   - `[x]` Every Delete and "Yes, delete" is red, and nothing else is — on the Due screen, the
+     product screen and the category list alike
+   - `[x]` A destructive control never becomes an icon on its own; the word stays beside the glyph
+   - `[x]` Icons are one `<symbol>` sprite in `base.html`, referenced with `<use>`, so a row costs
+     ~20 bytes a glyph rather than ~300 — the products list renders up to 952 of them
+   - `[x]` Every `#i-…` reference resolves to a symbol, and no symbol is defined and unused
+   - `[x]` No icon carries an ARIA `role` — `/settings` asserts that word never appears, and the
+     sprite is on every page
+   - `[x]` The discount sticker is the only saturated yellow, and no button may take it
+   - `[x]` The printed sheet still costs no toner: the sticker degrades to an outline, icons hide
+   - `[x]` Keyboard focus is visible — there was **no** focus style at all before this
+   - `[x]` A past-date row is still presented without alarm; the red is on the heading, not the
+     rows, and there is still one window rather than a set of bands
+   - `[x]` The date leads each row by weight, not colour: 700 and tabular, name dropped to 500.
+     The order is unchanged, because staff know it from the old app
+   - `[x]` `main` clears the floating + so the last row in a list can always be reached
+   - `[x]` `.btn` pins its own `line-height` — a `<button>` takes the browser's `normal` while an
+     `<a>` or `<summary>` inherits 1.4, which made Delete three pixels taller than Rename
 
 **No root/admin/manager account** — asked and decided 13 Aug, "no roles" stands. Category
 deletion is safe rather than gated, a PIN change needs the current PIN, and a forgotten PIN is

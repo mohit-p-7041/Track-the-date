@@ -3,13 +3,15 @@
 
 {% block content %}
 
-  <form class="search no-print" method="get" action="/sheet">
+  {# `search-wrap`: this bar carries five things where the products one carries
+     two, so it is the only one that cannot hold its line on a phone. #}
+  <form class="search search-wrap no-print" method="get" action="/sheet">
     <label class="label" for="days" style="margin:0; align-self:center;">Next</label>
     <input class="field" id="days" name="days" type="number" min="1" max="90"
            value="{{ window }}" style="width:5rem;">
     <label class="label" style="margin:0; align-self:center;">days</label>
     <button class="btn" type="submit">Update</button>
-    <button class="btn btn-quiet" type="button" id="print">Print</button>
+    <button class="btn btn-quiet" type="button" id="print"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-printer"/></svg>Print</button>
   </form>
 
   <div class="sheet">
@@ -24,6 +26,11 @@
 
     {% for name, items in groups %}
       <h2 class="sheet-group">{{ name or "No category" }} &mdash; {{ items | length }}</h2>
+      {# The table keeps every column it prints with, so on a phone it is wider
+         than the screen. This wrapper is what scrolls, rather than the page —
+         see the 30rem block in app.css. It is a plain div at every other width
+         and on paper. #}
+      <div class="sheet-scroll">
       <table class="sheet-table">
         <thead>
           <tr>
@@ -46,6 +53,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% endfor %}
 
     <p class="sheet-foot">

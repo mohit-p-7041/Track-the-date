@@ -73,9 +73,29 @@ def photo_url(image_path: str | None) -> str:
     return f"/{image_path}?v={stamp}"
 
 
+def asset_url(path: str) -> str:
+    """A /static URL carrying the file's modification time, so an edited file is
+    a new URL and every browser fetches it.
+
+    The same trick as photo_url above, for a worse problem. A stylesheet is
+    requested by every device in the shop and cached hard, and the handheld
+    fixes of 15 Aug were invisible on the Toughpad until its cache was cleared
+    by hand — which is not something anyone is going to do mid-shift, on ten
+    devices, to find out whether a change landed. Shipping a fix and having no
+    way to be sure it arrived is the actual failure being closed here.
+
+    Falls back to 0 rather than raising: a missing stylesheet should render a
+    plain page, not a 500.
+    """
+    file = ROOT / "app" / path.lstrip("/")
+    stamp = int(file.stat().st_mtime) if file.exists() else 0
+    return f"/{path.lstrip('/')}?v={stamp}"
+
+
 templates.env.filters["au_date"] = au_date
 templates.env.filters["au_when"] = au_when
 templates.env.globals["photo_url"] = photo_url
+templates.env.globals["asset_url"] = asset_url
 
 # The delete-confirmation rule. Both the Due screen and the product screen ask
 # it, so it comes from app/catalogue.py rather than being spelt out in two

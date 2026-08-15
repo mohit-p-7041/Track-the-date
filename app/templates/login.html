@@ -53,5 +53,5 @@
 {% endblock %}
 
 {% block scripts %}
-  {% if person %}<script src="/static/js/keypad.js"></script>{% endif %}
+  {% if person %}<script src="{{ asset_url('static/js/keypad.js') }}"></script>{% endif %}
 {% endblock %}

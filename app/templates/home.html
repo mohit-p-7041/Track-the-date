@@ -24,7 +24,7 @@
           <span class="item-body">
             <span class="item-date">
               {{ r.expiry_date | au_date }}
-              {% if r.status == 'discounted' %}<span class="tag">Discounted</span>{% endif %}
+              {% if r.status == 'discounted' %}<span class="tag tag-discount">Discounted</span>{% endif %}
             </span>
             <span class="item-name">{{ r.name }}</span>
             <span class="item-meta">
@@ -38,35 +38,35 @@
             <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}">
               <input type="hidden" name="status" value="discounted">
               <input type="hidden" name="next" value="/">
-              <button class="btn btn-quiet btn-small" type="submit">Discount</button>
+              <button class="btn btn-quiet btn-small" type="submit"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-tag"/></svg>Discount</button>
             </form>
           {% else %}
             {# Marking something down by accident needs an undo, and it is not a
                deletion — the item is still on the shelf at full price again. #}
             <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}/full-price">
               <input type="hidden" name="next" value="/">
-              <button class="btn btn-quiet btn-small" type="submit">Back to full price</button>
+              <button class="btn btn-quiet btn-small" type="submit"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-undo"/></svg>Back to full price</button>
             </form>
           {% endif %}
 
           {% if needs_confirmation(r.status, r.expiry_date, today) %}
             {% set left = days_until(r.expiry_date, today) %}
             <details class="confirm">
-              <summary class="btn btn-quiet btn-small">Delete</summary>
+              <summary class="btn btn-danger btn-small"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>Delete</summary>
               <span class="confirm-body">
                 This expires {% if left == 0 %}today{% elif left == 1 %}tomorrow
                 {%- else %}in {{ left }} days{% endif %}. Delete it?
                 <form method="post"
                       action="/products/{{ r.product_id }}/batches/{{ r.id }}/delete">
                   <input type="hidden" name="next" value="/">
-                  <button class="btn btn-small" type="submit">Yes, delete</button>
+                  <button class="btn btn-danger-solid btn-small" type="submit">Yes, delete</button>
                 </form>
               </span>
             </details>
           {% else %}
             <form method="post" action="/products/{{ r.product_id }}/batches/{{ r.id }}/delete">
               <input type="hidden" name="next" value="/">
-              <button class="btn btn-quiet btn-small" type="submit">Delete</button>
+              <button class="btn btn-danger btn-small" type="submit"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>Delete</button>
             </form>
           {% endif %}
         </span>

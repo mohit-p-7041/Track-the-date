@@ -28,15 +28,13 @@
       <label class="label" for="barcode">Barcode</label>
       <input class="field field-big" id="barcode" name="barcode" autocomplete="off"
              autocapitalize="off" spellcheck="false" autofocus required>
-      <button class="btn btn-wide" type="submit">Look up</button>
+      <button class="btn btn-wide" type="submit"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-barcode"/></svg>Look up</button>
 
       {# Revealed by scanner.js only where a camera can actually be opened, so
          it is absent on the counter laptop's http address rather than present
          and broken. It fills the field above and submits this same form —
          there is no second add path. #}
-      <button class="btn btn-wide btn-quiet" id="scan-camera" type="button" hidden>
-        Scan with camera
-      </button>
+      <button class="btn btn-wide btn-quiet" id="scan-camera" type="button" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-camera"/></svg>Scan with camera</button>
 
       <p class="note">Scan with the gun, or type it and press Enter.</p>
     </form>
@@ -112,5 +110,5 @@
 {% block scripts %}
   {# Only on the barcode step. The date step has nothing to scan, and the
      counter path should carry no script it does not use. #}
-  {% if not barcode %}<script src="/static/js/scanner.js"></script>{% endif %}
+  {% if not barcode %}<script src="{{ asset_url('static/js/scanner.js') }}"></script>{% endif %}
 {% endblock %}

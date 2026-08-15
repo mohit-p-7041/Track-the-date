@@ -7,7 +7,7 @@
     <input class="field" type="search" name="q" value="{{ q }}" autocomplete="off"
            placeholder="Name or barcode" aria-label="Search products">
     {% if selected %}<input type="hidden" name="category" value="{{ selected }}">{% endif %}
-    <button class="btn" type="submit">Search</button>
+    <button class="btn" type="submit"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>Search</button>
   </form>
 
   {% if categories %}

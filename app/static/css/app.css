@@ -1,17 +1,47 @@
 /* Track the Date — Tecoma
    Clean and fast. No animation, no transitions — see SPEC.md "UI principles".
-   Sized for an iPad held at arm's length in a shop, and for a laptop screen. */
+   Sized for an iPad held at arm's length in a shop, and for a laptop screen.
+
+   Colour, added 14 Aug with the COFFEE TIME uplift, does exactly three jobs:
+
+     green commits, red removes, yellow is a state and never an action.
+
+   Urgency is deliberately not one of them. An item past its date is a normal,
+   expected state (SPEC.md "Don't treat them as an error condition") and a set
+   of expiry bands was considered and closed off in docs/BACKLOG.md. So no row
+   is ever painted by how soon it dies — the date is promoted by weight, not by
+   colour, and every row reads at the same volume. */
+
+:root {
+  /* The forecourt. */
+  --forecourt: #00693c;       /* bar, primary buttons, the + — white on it, 6.8:1 */
+  --forecourt-deep: #004e2c;  /* :active only */
+  --pump: #ffd400;            /* the discount sticker, and the rule under the bar */
+
+  /* The coffee counter. */
+  --espresso: #2b211c;        /* body text — 13.8:1 on --counter */
+  --steam: #6e6862;           /* meta, labels, hints — 5.5:1 on white */
+  --counter: #f1f0ec;         /* page ground; cards stay white */
+
+  /* Removal. This was .head-overdue's red before it carried every delete —
+     the same value staff already associate with the old app's Delete. */
+  --reduced: #b3261e;         /* 6.5:1 on white */
+
+  --card: #fff;
+  --rule: #dcd8d0;            /* card and control borders */
+  --rule-soft: #edeae4;       /* row separators */
+}
 
 * { box-sizing: border-box; }
 
 /* The `hidden` attribute must actually hide things.
    The browser's own rule for it is only `[hidden] { display: none }`, which
-   any author rule setting `display` outranks — and `.btn` sets
-   `display: inline-block`. So the camera button, hidden in the HTML and
-   revealed by JavaScript only where a camera exists, was on screen anyway on
-   every device without one: visible, and completely inert, because the script
-   returns before it binds a click. Exactly the "present and broken" state it
-   was written to avoid. Found on an iPad over plain http. */
+   any author rule setting `display` outranks — and `.btn` sets a display too.
+   So the camera button, hidden in the HTML and revealed by JavaScript only
+   where a camera exists, was on screen anyway on every device without one:
+   visible, and completely inert, because the script returns before it binds a
+   click. Exactly the "present and broken" state it was written to avoid.
+   Found on an iPad over plain http. */
 [hidden] { display: none !important; }
 
 html {
@@ -23,43 +53,143 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 17px;
   line-height: 1.4;
-  color: #1a1a1a;
-  background: #f2f2f4;
+  color: var(--espresso);
+  background: var(--counter);
+}
+
+/* Keyboard focus was not styled at all before the uplift, which left the
+   laptop — no touchscreen, driven by tab and enter during a stocktake — with
+   nothing to follow. Green clears on white; inside the bar it would vanish, so
+   the yellow takes over there. */
+:focus-visible {
+  outline: 3px solid var(--forecourt);
+  outline-offset: 2px;
+}
+
+.bar :focus-visible { outline-color: var(--pump); }
+
+/* ------------------------------------------------------------------ icons
+
+   Drawn, not typed: a 1.75px stroke on currentColor, so a glyph takes the
+   colour of whatever it sits in — red on Delete, espresso on a quiet button —
+   and matches the weight of the word beside it.
+
+   The space between icon and word is a margin here rather than a space in the
+   HTML, because tests/test_screens.py asserts `">Rename<"` and `">Delete<"`
+   with the label tight against its tag. Put a space in the markup and those go
+   red. It was a flexbox `gap` until 15 Aug; see .btn for why it is not. */
+
+.icon {
+  flex: 0 0 auto;
+  /* See .btn: this is the icon-to-word space, as a margin so that a browser
+     without flexbox `gap` still gets it. The FAB resets it — its + has no word
+     beside it, and a right margin would sit the glyph off-centre in the
+     circle. */
+  margin-right: 0.4em;
+  width: 1.05em;
+  height: 1.05em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The sprite itself. Hidden by size and overflow rather than `display: none`
+   or the `hidden` attribute — a <use> reaching into a display:none tree is the
+   one part of this technique browsers have historically disagreed on, and this
+   sidesteps the question entirely. */
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 
 /* ------------------------------------------------------------------ bar */
 
+/* Margins rather than `gap` throughout this file from 15 Aug — see .btn for
+   why. Every one lays out the same as the gap it replaced. */
 .bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  background: #fff;
-  border-bottom: 1px solid #d8d8dc;
+  padding: 0.6rem 1rem;
+  background: var(--forecourt);
+  border-bottom: 3px solid var(--pump);
   position: sticky;
   top: 0;
+  z-index: 10;
 }
 
-.bar-title { font-weight: 600; }
+/* The shop's mark. The cup is drawn in the same stroke as the action icons, so
+   the chrome and the buttons read as one hand. */
+.mark {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: #fff;
+  text-decoration: none;
+}
 
+.mark-cup {
+  flex: 0 0 auto;
+  margin-right: 0.55rem;
+  width: 1.6rem;
+  height: 1.6rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mark-word {
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+
+/* .mark-shop was here. The shop name came out of the bar on 15 Aug — one shop,
+   one laptop, and on a handheld it sat directly beside the signed-in name
+   reading "BP Tecoma BP TECOMA". It still identifies the app from every page
+   <title>, which is what a browser tab and a home-screen icon read. */
+
+/* `margin-left: auto` rather than the bar's `space-between`, because the bar
+   now holds three things — the mark, the destinations, and who is signed in.
+   The auto margin keeps the last two grouped on the right, where the nav alone
+   used to sit; space-between on its own would have stranded the nav in the
+   middle of the bar. */
 .bar-nav {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
   flex-wrap: wrap;
+  margin-left: auto;
 }
+
+.bar-nav a + a { margin-left: 0.15rem; }
 
 .bar-nav a {
-  color: #0a58ca;
+  color: #fff;
   text-decoration: none;
   padding: 0.5rem;
+  border-radius: 6px;
 }
 
-/* Who's signed in, and the way out. Every write is stamped with this name. */
+/* Who's signed in, and the way out. Every write is stamped with this name.
+   It sits outside .bar-nav, so it has to carry the things that `.bar-nav a`
+   used to give it — without the `text-decoration` it renders underlined, which
+   is the browser default for a bare <a> and reads as a different kind of thing
+   from the destinations beside it. */
 .bar-who {
-  color: #6a6a70 !important;
+  color: rgba(255, 255, 255, 0.72) !important;
   font-size: 0.85rem;
+  text-decoration: none;
+  padding: 0.5rem;
+  border-radius: 6px;
+  margin-left: 1rem;
 }
 
 /* --------------------------------------------------------- sign in pad */
@@ -85,32 +215,69 @@ body {
   text-align: center;
   letter-spacing: 0.5rem;
   padding: 0.6rem;
-  border: 1px solid #c8c8ce;
+  border: 1px solid var(--rule);
   border-radius: 8px;
-  background: #fff;
+  background: var(--card);
+  color: var(--espresso);
   margin-bottom: 0.8rem;
 }
 
-/* Big targets: one-handed on an iPad, no keyboard needed. */
+/* Big targets: one-handed on an iPad, no keyboard needed.
+
+   Written as flexbox first and upgraded to grid, rather than the other way
+   round. The shop's Panasonic Toughpad runs a browser old enough to have
+   flexbox but not Grid, and a `display: grid` it does not understand is simply
+   ignored — which laid all twelve keys out in a single row of thin pills. The
+   sign-in pad is the first thing anyone sees every shift, so it is the last
+   thing that should depend on the newest feature in the file.
+
+   Percentages rather than a gap, and they deliberately do not add up to 100.
+   Three keys at 32% with 1.5% between them comes to 99%, leaving a percent of
+   slack: the first attempt totalled exactly 100% and laid out two keys per row,
+   because subpixel rounding on a 328px container tipped the third over the edge
+   and flex-wrap did as it was told. A row of a keypad is not the place to be
+   within a rounding error of correct.
+
+   No @supports around this half — grid overrides it below. */
 .keys {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
   margin-bottom: 1rem;
 }
 
 .key {
+  width: 32%;
+  margin: 0 1.5% 0.6rem 0;
   font-size: 1.6rem;
   font-family: inherit;
+  font-variant-numeric: tabular-nums;
   padding: 1rem 0;
-  border: 1px solid #c8c8ce;
+  border: 1px solid var(--rule);
   border-radius: 10px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--card);
+  color: var(--espresso);
   cursor: pointer;
 }
 
-.key-quiet { font-size: 1rem; color: #6a6a70; }
+/* Every third key ends its row, so it drops the trailing margin. */
+.key:nth-child(3n) { margin-right: 0; }
+
+/* The real thing, wherever it is understood. @supports is itself older than
+   Grid in every engine, so a browser that takes this branch can be trusted with
+   what is inside it. */
+@supports (display: grid) {
+  .keys {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.6rem;
+  }
+
+  .key, .key:nth-child(3n) { width: auto; margin: 0; }
+}
+
+.key:active { background: var(--counter); }
+
+.key-quiet { font-size: 1rem; color: var(--steam); }
 
 .message {
   background: #fdecea;
@@ -121,85 +288,148 @@ body {
   font-size: 0.9rem;
 }
 
-.note { color: #6a6a70; font-size: 0.85rem; }
+.note { color: var(--steam); font-size: 0.85rem; }
 
-/* ------------------------------------------------------- buttons, chips */
+/* A plain link in body copy — "Scan another", "Not Mohit?", "Show all 944" —
+   was rendering in the browser's default blue, the one colour in the app that
+   belonged to nothing. `:not(.btn)` keeps it off the links that are buttons. */
+.note a:not(.btn),
+.foot a:not(.btn),
+.empty a:not(.btn) { color: var(--forecourt); }
 
+/* ------------------------------------------------------- buttons, chips
+
+   Three weights, and the rule is readable off the screen: a solid green button
+   commits something, a red one removes it, and everything else is quiet.
+   Nothing is yellow — yellow is reserved for the sticker, which is a state. */
+
+/* The space between a glyph and its word is a margin on the glyph, not a `gap`
+   on the button. Flexbox `gap` is the newest thing this file asks for — Chrome
+   84, in 2020 — and the shop's Toughpad predates it, so on that device every
+   button read "⊘Discount" and "📅Add another date" with the icon welded to the
+   word. A margin is understood by everything and lays out identically.
+
+   Still not a space in the markup: tests/test_screens.py asserts `">Rename<"`
+   and `">Delete<"` with the label tight against its tag, and a space there
+   would turn them red. */
 .btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: inherit;
   font-size: 1rem;
+  /* Explicit, because .btn lands on three different elements and they disagree
+     by default: a <button> gets the browser's `line-height: normal` while an
+     <a> or a <summary> inherits the body's 1.4. That made Delete three pixels
+     taller than the Rename beside it on the categories row. */
+  line-height: 1.25;
   padding: 0.75rem 1.1rem;
-  border: 1px solid #0a58ca;
+  border: 1px solid var(--forecourt);
   border-radius: 8px;
-  background: #0a58ca;
+  background: var(--forecourt);
   color: #fff;
   text-decoration: none;
   text-align: center;
   cursor: pointer;
 }
 
-.btn-wide { display: block; width: 100%; }
+.btn:active { background: var(--forecourt-deep); border-color: var(--forecourt-deep); }
+
+.btn-wide { display: flex; width: 100%; }
 
 .btn-quiet {
-  background: #fff;
-  color: #1a1a1a;
-  border-color: #c8c8ce;
+  background: var(--card);
+  color: var(--espresso);
+  border-color: var(--rule);
 }
+
+.btn-quiet:active { background: var(--counter); border-color: var(--rule); }
+
+/* Deleting is the one thing in this app that cannot be undone — a discount can
+   be taken back, a batch cannot. It is the only red, and it is red everywhere:
+   the Due screen, the product screen, and the category list. */
+.btn-danger {
+  background: var(--card);
+  color: var(--reduced);
+  border-color: var(--reduced);
+}
+
+.btn-danger:active { background: #fdecea; }
+
+/* The weight lands on the confirmation, not on the row. A list of forty rows
+   with solid red buttons down it would drown the rows themselves. */
+.btn-danger-solid {
+  background: var(--reduced);
+  color: #fff;
+  border-color: var(--reduced);
+}
+
+.btn-danger-solid:active { background: #8c1d17; border-color: #8c1d17; }
 
 .filters {
   display: flex;
-  gap: 0.4rem;
   overflow-x: auto;
   padding: 0.6rem 1rem;
-  background: #fff;
-  border-bottom: 1px solid #d8d8dc;
+  background: var(--card);
+  border-bottom: 1px solid var(--rule);
 }
+.filters > * + * { margin-left: 0.4rem; }
+
 
 .chip {
   flex: 0 0 auto;
   font-size: 0.85rem;
   padding: 0.35rem 0.7rem;
-  border: 1px solid #c8c8ce;
+  border: 1px solid var(--rule);
   border-radius: 999px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--card);
+  color: var(--espresso);
   text-decoration: none;
 }
 
-.chip-on { background: #1a1a1a; border-color: #1a1a1a; color: #fff; }
+.chip-on {
+  background: var(--espresso);
+  border-color: var(--espresso);
+  color: #fff;
+}
 
 /* --------------------------------------------------------------- lists */
 
-main { padding-bottom: 3rem; }
+/* Deep enough that the last row in a list can always be scrolled clear of the
+   floating +, which is 3.75rem tall and sits 1rem off the bottom. At 3rem the
+   final row's buttons stayed underneath it with no way to reach them. */
+main { padding-bottom: 6rem; }
 
 .head {
   margin: 1.25rem 1rem 0.5rem;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #6a6a70;
+  letter-spacing: 0.06em;
+  color: var(--steam);
 }
 
-.head-overdue { color: #b3261e; }
+/* The heading carries the red, not the rows. Staff clear this backlog as a
+   normal part of Saturday and forty alarmed rows would say otherwise. */
+.head-overdue { color: var(--reduced); }
 
 .items {
   list-style: none;
   margin: 0;
   padding: 0;
-  background: #fff;
-  border-top: 1px solid #d8d8dc;
-  border-bottom: 1px solid #d8d8dc;
+  background: var(--card);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
 }
 
 .item {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
   padding: 0.7rem 1rem;
-  border-bottom: 1px solid #ececf0;
+  border-bottom: 1px solid var(--rule-soft);
 }
+
+.item > * + * { margin-left: 0.85rem; }
 
 .item:last-child { border-bottom: 0; }
 
@@ -211,12 +441,12 @@ main { padding-bottom: 3rem; }
   height: 52px;
   border-radius: 6px;
   object-fit: cover;
-  background: #e8e8ec;
+  background: #e8e6e0;
 }
 
 .thumb-empty {
   display: block;
-  border: 1px solid #dcdce2;
+  border: 1px solid var(--rule);
 }
 
 .item-body {
@@ -228,13 +458,21 @@ main { padding-bottom: 3rem; }
   text-decoration: none;
 }
 
+/* The date is why the row exists. It used to be the smallest, greyest thing on
+   it while the name was bold and black, which is backwards for someone reading
+   down a list looking for what dies first. The order is unchanged — staff know
+   it from the old app — but the weights have swapped. Tabular figures make the
+   dates line up as a true column. */
 .item-date {
-  font-size: 0.8rem;
-  color: #6a6a70;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--espresso);
 }
 
 .item-name {
-  font-weight: 600;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -242,12 +480,12 @@ main { padding-bottom: 3rem; }
 
 .item-meta {
   font-size: 0.78rem;
-  color: #8a8a90;
+  color: var(--steam);
 }
 
 .empty, .foot {
   margin: 1rem;
-  color: #6a6a70;
+  color: var(--steam);
   font-size: 0.85rem;
 }
 
@@ -255,11 +493,12 @@ main { padding-bottom: 3rem; }
 
 .search {
   display: flex;
-  gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background: #fff;
-  border-bottom: 1px solid #d8d8dc;
+  background: var(--card);
+  border-bottom: 1px solid var(--rule);
 }
+.search > * + * { margin-left: 0.5rem; }
+
 
 .search .field { margin-bottom: 0; }
 
@@ -267,11 +506,12 @@ main { padding-bottom: 3rem; }
   margin-left: auto;
   text-align: right;
   font-size: 0.85rem;
-  color: #6a6a70;
+  font-variant-numeric: tabular-nums;
+  color: var(--espresso);
   white-space: nowrap;
 }
 
-.item-right .item-meta { display: block; }
+.item-right .item-meta { display: block; font-variant-numeric: normal; }
 
 .item-stack { align-items: flex-start; }
 
@@ -280,6 +520,7 @@ main { padding-bottom: 3rem; }
    real deletion — so there is no resolved-but-present row left to sit back.
    A discounted batch is still on the shelf and reads at full strength. */
 
+/* Past date. Quiet on purpose: it is a normal state, not a fault. */
 .tag {
   display: inline-block;
   font-size: 0.7rem;
@@ -287,55 +528,87 @@ main { padding-bottom: 3rem; }
   letter-spacing: 0.04em;
   padding: 0.1rem 0.4rem;
   margin-left: 0.3rem;
-  border: 1px solid #d8d8dc;
+  border: 1px solid var(--rule);
   border-radius: 4px;
-  color: #6a6a70;
+  color: var(--steam);
   vertical-align: 0.1em;
+}
+
+/* The one saturated yellow in the app. Discounting an item means putting a real
+   sticker on it, so the screen and the shelf say the same thing in the same
+   colour. Espresso on this yellow is 11:1. */
+.tag-discount {
+  background: var(--pump);
+  border-color: var(--pump);
+  color: var(--espresso);
+  font-weight: 700;
 }
 
 .actions {
   display: flex;
-  gap: 0.3rem;
   flex-wrap: wrap;
   justify-content: flex-end;
   margin-left: auto;
 }
+
+/* margin-left rather than margin-right: this group is packed to the right, so a
+   trailing right margin would hold the last button off the edge. */
+.actions > * + * { margin-left: 0.3rem; }
 
 .btn-small { font-size: 0.8rem; padding: 0.4rem 0.6rem; }
 
 /* Deleting a batch asks first only when the item is still good and still full
    price. <details> gives that two-step reveal with no script at all, which is
    why there is no confirm() near this — a JS dialog blocks the page and reads
-   like a browser error on an iPad.
+   like a browser failure on an iPad.
 
    The marker is removed three ways because the three engines disagree, and
-   .btn already sets display:inline-block on the summary, which suppresses it in
-   most of them anyway. */
+   .btn already sets a display on the summary, which suppresses it in most of
+   them anyway. */
 .confirm { display: inline-block; }
-.confirm > summary { cursor: pointer; list-style: none; }
-.confirm > summary::marker { content: ""; }
-.confirm > summary::-webkit-details-marker { display: none; }
+/* `display: flex` rather than the inline-flex .btn would give it: as an inline
+   box the summary sits in a line box and picks up the strut's leading, which
+   made Delete a few pixels taller than the Rename beside it. */
+.confirm > summary { cursor: pointer; display: flex; }
+
+/* Every <summary> styled as a button, not just the ones inside .confirm.
+
+   The Edit control on the product screen is a `<details>` too, and it was never
+   covered here — it only ever *looked* right because .btn's `inline-flex`
+   suppressed the marker as a side effect. On the shop's Toughpad, whose browser
+   keeps the marker regardless, a disclosure triangle appeared above the pencil
+   and pushed the word "Edit" onto its own line. Suppressed three ways because
+   the engines disagree on which one they honour, and stated once here so a
+   fourth <details> added later cannot miss out. */
+summary.btn { cursor: pointer; list-style: none; }
+summary.btn::marker { content: ""; }
+summary.btn::-webkit-details-marker { display: none; }
 
 .confirm-body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 0.4rem;
   margin-top: 0.35rem;
   font-size: 0.85rem;
-  color: #6a6a70;
+  color: var(--steam);
 }
+/* Wraps, so it needs the vertical half of the old gap too. */
+.confirm-body > * { margin-left: 0.4rem; margin-bottom: 0.4rem; }
+.confirm-body { margin-bottom: -0.4rem; }
+
 
 /* The Due screen's rows. Swipe lived here until 13 Aug — the row followed the
    finger and snapped back — and came out after the iPad session: a gesture whose
    threshold a person cannot see is a guess, and the guesses were "delete" and
    "discount". The buttons say what they do instead, and nothing here needs a
-   transition because nothing moves. */
+   transition because nothing moves.
+
+   The same reasoning is why every icon added on 14 Aug sits beside its word and
+   never replaces it. An unlabelled trash can is learned, not read. */
 .item-row {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
   flex: 1 1 14rem;
   min-width: 0;
   text-decoration: none;
@@ -345,7 +618,9 @@ main { padding-bottom: 3rem; }
   padding: 0.15rem 0;
 }
 
-.item-row:active { background: #f2f2f5; }
+.item-row > * + * { margin-left: 0.75rem; }
+
+.item-row:active { background: var(--counter); }
 
 /* The products list has no buttons on its rows, so the link is the whole
    rectangle rather than sharing it with an actions column. */
@@ -357,7 +632,7 @@ main { padding-bottom: 3rem; }
   display: block;
   width: 100%;
   max-height: 60vh;
-  background: #1a1a1a;
+  background: var(--espresso);
   border-radius: 8px;
   margin: 0.5rem 0;
 }
@@ -377,8 +652,8 @@ main { padding-bottom: 3rem; }
 .form-wrap-wide { max-width: 44rem; }
 
 .card {
-  background: #fff;
-  border: 1px solid #d8d8dc;
+  background: var(--card);
+  border: 1px solid var(--rule);
   border-radius: 10px;
   padding: 1rem;
 }
@@ -386,38 +661,45 @@ main { padding-bottom: 3rem; }
 .label {
   display: block;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #6a6a70;
+  letter-spacing: 0.06em;
+  color: var(--steam);
   margin: 0.9rem 0 0.3rem;
 }
 
 .label:first-child { margin-top: 0; }
 
-.hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: #8a8a90; }
+.hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--steam); }
 
 .field {
   width: 100%;
   font-family: inherit;
   font-size: 1rem;
   padding: 0.65rem 0.7rem;
-  border: 1px solid #c8c8ce;
+  border: 1px solid var(--rule);
   border-radius: 8px;
-  background: #fff;
-  color: #1a1a1a;
+  background: var(--card);
+  color: var(--espresso);
   margin-bottom: 0.4rem;
 }
 
 /* The barcode and the date are the two things anyone actually types. */
-.field-big { font-size: 1.3rem; padding: 0.7rem; }
+.field-big {
+  font-size: 1.3rem;
+  padding: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
 
 .known {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
   margin-bottom: 0.5rem;
 }
+
+/* The photo-to-name space on the product screen. Without it the name started
+   hard against the edge of the picture. */
+.known > * + * { margin-left: 0.85rem; }
 
 .known-name { display: block; font-weight: 600; font-size: 1.1rem; }
 
@@ -435,9 +717,10 @@ main { padding-bottom: 3rem; }
 .row-form {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
+.row-form > * + * { margin-left: 0.5rem; }
+
 
 .row-form .field { margin-bottom: 0; }
 .row-form .note { margin: 0; white-space: nowrap; }
@@ -453,10 +736,13 @@ main { padding-bottom: 3rem; }
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
   padding: 0.6rem 0;
-  border-top: 1px solid #ececf0;
+  border-top: 1px solid var(--rule-soft);
 }
+/* Wraps on an iPad by design, so both directions. */
+.staff-row > * { margin-right: 0.5rem; margin-bottom: 0.5rem; }
+.staff-row { margin-bottom: -0.5rem; }
+
 
 .staff-row:first-child { border-top: 0; padding-top: 0; }
 .staff-row .row-form { margin-bottom: 0; }
@@ -466,7 +752,7 @@ main { padding-bottom: 3rem; }
    beside the name it belongs to. */
 .staff-row .staff-wide { flex: 1 1 100%; }
 
-.staff-gone { color: #6a6a70; }
+.staff-gone { color: var(--steam); }
 
 /* ------------------------------------------------- camera barcode scanning */
 
@@ -478,7 +764,7 @@ main { padding-bottom: 3rem; }
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
-  background: #1a1a1a;
+  background: var(--espresso);
   border-radius: 8px;
   object-fit: cover;
   margin-bottom: 0.6rem;
@@ -487,10 +773,10 @@ main { padding-bottom: 3rem; }
 /* --------------------------------------------------- the discount sheet */
 
 .sheet {
-  background: #fff;
+  background: var(--card);
   padding: 1rem;
   margin: 1rem;
-  border: 1px solid #d8d8dc;
+  border: 1px solid var(--rule);
   border-radius: 10px;
 }
 
@@ -498,9 +784,9 @@ main { padding-bottom: 3rem; }
 
 .sheet-group {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   margin: 1.25rem 0 0.35rem;
 }
 
@@ -515,19 +801,19 @@ main { padding-bottom: 3rem; }
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #6a6a70;
-  border-bottom: 1px solid #c8c8ce;
+  color: var(--steam);
+  border-bottom: 1px solid var(--rule);
   padding: 0.2rem 0.3rem;
 }
 
 .sheet-table td {
   padding: 0.35rem 0.3rem;
-  border-bottom: 1px solid #ececf0;
+  border-bottom: 1px solid var(--rule-soft);
   vertical-align: top;
 }
 
 .col-tick { width: 1.6rem; }
-.col-date { width: 6.5rem; white-space: nowrap; }
+.col-date { width: 6.5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .col-barcode { width: 8.5rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .col-price { width: 5rem; }
 
@@ -536,11 +822,11 @@ main { padding-bottom: 3rem; }
   display: inline-block;
   width: 0.85rem;
   height: 0.85rem;
-  border: 1px solid #6a6a70;
+  border: 1px solid var(--steam);
   border-radius: 2px;
 }
 
-.sheet-foot { margin-top: 1rem; font-size: 0.85rem; color: #6a6a70; }
+.sheet-foot { margin-top: 1rem; font-size: 0.85rem; color: var(--steam); }
 
 /* --------------------------------------------------------------- print
    The weekly discount sheet on A4. No navigation, no heavy ink. */
@@ -559,8 +845,28 @@ main { padding-bottom: 3rem; }
   .item { break-inside: avoid; }
   .thumb { display: none; }
 
+  /* The sticker is a solid yellow on screen and a toner bill on paper. On the
+     page it says the same thing with an outline. */
+  .tag, .tag-discount {
+    background: none;
+    color: #000;
+    border: 1px solid #000;
+    font-weight: 400;
+  }
+
+  /* Icons are for a thumb, not for a printout. */
+  .icon { display: none; }
+
   .sheet { margin: 0; padding: 0; border: 0; border-radius: 0; }
   .sheet-title { font-size: 12pt; }
+
+  /* Belt and braces. The phone's `overflow-x: auto` on this wrapper is inside a
+     `@media screen` block and so cannot reach paper as things stand — but an
+     `overflow` other than visible establishes a new block formatting context,
+     and that would stop the table breaking across pages the way `break-inside`
+     asks it to just below. A sheet clipped to one page loses rows silently,
+     which is worth one line to make impossible rather than merely unlikely. */
+  .sheet-scroll { overflow: visible; }
 
   /* Keep a group's heading with at least some of its rows, and repeat the
      column headings when a long group runs onto the next page. */
@@ -603,9 +909,11 @@ input[list].field {
   display: flex;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: 0.4rem;
   margin-bottom: 0.75rem;
 }
+.cat-row > * { margin-right: 0.4rem; margin-bottom: 0.4rem; }
+.cat-row { margin-bottom: 0.35rem; }
+
 
 .cat-row .row-form { margin-bottom: 0; flex: 1 1 16rem; }
 .cat-row .note { align-self: center; white-space: nowrap; }
@@ -616,22 +924,205 @@ input[list].field {
    The safe-area inset keeps it clear of the iPad's home indicator. */
 .fab {
   position: fixed;
+  /* Two declarations each, and the order is the whole point. A browser that has
+     never heard of env() throws out the calc() as an invalid value and keeps the
+     plain 1rem above it; one that knows env() takes the second and gets the
+     iPad's home indicator cleared. Without the fallback the shop's Toughpad had
+     no `right` or `bottom` at all, so the + fell back to its static position and
+     was nowhere near the corner — the app's main action, missing, on the device
+     it was most needed on. */
+  right: 1rem;
+  bottom: 1rem;
   right: calc(1rem + env(safe-area-inset-right));
   bottom: calc(1rem + env(safe-area-inset-bottom));
   width: 3.75rem;
   height: 3.75rem;
   border-radius: 50%;
-  background: #0a58ca;
+  background: var(--forecourt);
   color: #fff;
-  border: 1px solid #0a58ca;
+  border: 1px solid var(--forecourt);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.1rem;
-  line-height: 1;
   text-decoration: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   z-index: 20;
 }
 
-.fab:active { background: #084298; }
+.fab:active { background: var(--forecourt-deep); }
+
+/* Bigger than a row icon and drawn rather than typed — a text + in the system
+   font sits off-centre and reads thin at this size. */
+.fab .icon { width: 2rem; height: 2rem; stroke-width: 2; margin-right: 0; }
+
+/* --------------------------------------------- the phone, 15 Aug
+
+   Everything above this line was sized for an iPad at arm's length and for the
+   laptop, and until today that was the whole list — the only @media in the file
+   was the print block. The Android scanner phone is 360px wide in portrait, and
+   at that width three things were broken:
+
+     - the bar collided with itself. "COFFEE TIME" ran under "Sheet", the five
+       destinations broke into three ragged lines, and the whole thing took
+       135px off the top of a 640px screen.
+     - a product name ellipsised to about twelve characters. On a Due row the
+       name is the one thing that has to be readable, because it is what gets
+       matched against the item in your hand — and "up &Go Liqu…" does not tell
+       you which flavour you are holding.
+     - the discount sheet was 417px of table in a 360px window, so the page
+       scrolled sideways and the Price column was off the screen entirely.
+
+   One breakpoint, and it is deliberately low. An iPad in portrait is 768px and
+   never reaches 30rem, so the layout tuned in the 13 Aug session does not move
+   by a pixel — this file gets a phone without getting a redesign.
+
+   `screen and` because the sheet prints on A4: a print context must never pick
+   any of this up. */
+
+@media screen and (max-width: 30rem) {
+
+  /* ---- the bar: two bands rather than a collision ----
+
+     Identity on the first line, destinations on the second, sharing the width
+     equally so each is a thumb-sized target and none is cut off. No hamburger
+     and no icon-only nav: a glyph never replaces its word in this app, and
+     hiding Scan behind a tap is the wrong trade on the one screen that exists
+     to reach Scan. */
+
+  .bar {
+    flex-wrap: wrap;
+    column-gap: 0.5rem;
+    row-gap: 0.4rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .mark { flex: 1 1 auto; }
+  .mark-cup { width: 1.4rem; height: 1.4rem; }
+  .mark-word { font-size: 0.82rem; letter-spacing: 0.1em; }
+  .mark-shop { font-size: 0.75rem; }
+
+  /* Stays on the first line, beside the mark: it is who you are, not where you
+     are going. That is what frees the second line for the five destinations. */
+  .bar-who {
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    padding: 0.25rem 0;
+  }
+
+  /* `order: 3` puts the nav after the mark and the name, which are both at the
+     default 0 — so it takes the second line on its own. */
+  .bar-nav {
+    order: 3;
+    flex: 1 1 100%;
+    margin-left: 0;
+    gap: 0;
+    flex-wrap: nowrap;
+  }
+
+  .bar-nav a {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0.5rem 0.1rem;
+    font-size: 0.82rem;
+    text-align: center;
+  }
+
+  /* ---- rows: what it is, then what you can do about it ----
+
+     The row stops competing for horizontal space. Picture, date, name and
+     barcode take the full width; the buttons drop to a line of their own
+     beneath, right-aligned so the thumb lands in the same place on every row.
+     This is the geometry the products list already uses — `.item-row-full` —
+     now applied to the rows that carry actions.
+
+     Child combinators throughout: on the Due screen `.item-body` sits inside
+     the `.item-row` link, and on the product screen it is a direct child of
+     `.item`. Only the direct children are flex items of the row, and only they
+     should span it. */
+
+  .item {
+    flex-wrap: wrap;
+    row-gap: 0.45rem;
+    padding: 0.7rem 0.75rem;
+  }
+
+  .item > .item-row,
+  .item > .item-body { flex-basis: 100%; }
+
+  .item > .actions {
+    flex: 1 1 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  /* With the width back, a name is worth reading in full. Two lines of
+     "Cadbury Twirl Kingsize Bar 58g" beats one line of "Cadbury Twi…" on a
+     screen whose job is telling you which item this is. */
+  .item-name {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  /* The confirmation is a sentence, so it reads from the left even though the
+     buttons above it are ranged right. */
+  .confirm-body { justify-content: flex-start; }
+
+  /* ---- one-line forms that are no longer one line ----
+
+     Only the sheet's bar, which carries five things — Next, a number, days,
+     Update, Print — and cannot hold them in 360px. The products search is a
+     field and a button; those two fit, and wrapping them cost a row on the
+     screen people use to find things.
+
+     Not .row-form either: also a field with its button beside it. Wrapping it
+     was tried and reverted, because it put Save under the expiry window, Add
+     under the new-category box and Rename under every staff name, turning the
+     one screen that was nearly right into the tallest in the app. A field that
+     ends a few characters short is the smaller cost — you can tap into it and
+     read the rest. */
+
+  .search { padding: 0.6rem 0.75rem; }
+  .search-wrap { flex-wrap: wrap; }
+
+  /* ---- the discount sheet ----
+
+     The table is a print artifact: its columns are the columns that go on the
+     paper, and the tick box and the price box exist to be written in with a
+     pen. So none of them is dropped for the phone. The table scrolls inside its
+     own card instead, which keeps the preview honest about what will print and
+     stops the page itself moving sideways. */
+
+  .sheet { margin: 0.75rem 0.5rem; padding: 0.75rem; }
+  .sheet-scroll { overflow-x: auto; }
+
+  /* Set the type down and the fixed columns with it, so a normal week's sheet
+     lands inside the card and the scroller never has to be discovered. It stays
+     there as the backstop for the rows that still do not fit — an 18-digit
+     barcode, a category name nobody kept short — because a sideways swipe you
+     rarely need beats a column that is silently not on the screen.
+
+     The date and barcode keep `white-space: nowrap` from the rules above: both
+     are single tokens that mean nothing broken across two lines. */
+  /* `table-layout: fixed` is the half that makes the widths below mean
+     anything. Under the automatic algorithm a declared width is a suggestion
+     the browser abandons as soon as a cell's longest word wants more, which is
+     why the table still rendered 377px wide inside a 320px card and put the
+     Price column off the edge. Fixed honours them, and the product column —
+     the only one without a width — takes exactly what is left.
+
+     `overflow-wrap` is the other half: under fixed layout a word longer than
+     its column overflows the cell rather than widening it, and product names
+     from the shop's data include things like "9310988002240-CHICKEN". */
+  /* These four widths are measured, not guessed, and `box-sizing: border-box`
+     at the top of this file means each one has to cover its own padding as well
+     as its text. Too tight and a nowrap cell spills into its neighbour: at
+     4.7rem the date ran straight into the barcode with no gap between them.
+     The cell padding comes in to 0.2rem here to buy the columns the room. */
+  .sheet-table { font-size: 0.75rem; table-layout: fixed; }
+  .sheet-table td, .sheet-table th { padding: 0.35rem 0.2rem; }
+  .col-name { overflow-wrap: anywhere; }
+  .col-tick { width: 1.3rem; }
+  .col-date { width: 5rem; }
+  .col-barcode { width: 6.3rem; }
+  .col-price { width: 2.6rem; }
+}

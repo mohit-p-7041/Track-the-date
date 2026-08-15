@@ -31,7 +31,7 @@
         </form>
 
         <details class="confirm">
-          <summary class="btn btn-quiet">Delete</summary>
+          <summary class="btn btn-danger"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg>Delete</summary>
           <span class="confirm-body">
             Are you sure you want to delete {{ c.name }}?
             {% if c.products %}
@@ -42,7 +42,7 @@
               Nothing is using it.
             {% endif %}
             <form method="post" action="/settings/categories/{{ c.id }}/delete">
-              <button class="btn btn-small" type="submit">Yes, delete</button>
+              <button class="btn btn-danger-solid btn-small" type="submit">Yes, delete</button>
             </form>
           </span>
         </details>
@@ -135,7 +135,7 @@
 
   <h2 class="head">Export</h2>
   <div class="card">
-    <a class="btn btn-quiet" href="/settings/export.xlsx">Export to Excel</a>
+    <a class="btn btn-quiet" href="/settings/export.xlsx"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-download"/></svg>Export to Excel</a>
     <p class="note">
       One sheet, one row per date &mdash; {{ batch_count }} of them. A deleted
       date is gone for good, so this file is the only record that keeps one.
