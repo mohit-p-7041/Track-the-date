@@ -210,10 +210,14 @@ state a device is in when it is first set up); the scan path treats a typed barc
 barcode and a camera's barcode as the same thing, so a keyboard-mode scanner cannot take a
 different route through the app than the counter does.
 
-**Not verified, and not verifiable from here:** every step on the iPad and the phone. The profile
-install, the trust toggle, Add to Home Screen, the CA install on Android, and any particular
-scanner's settings app. The order and the reasoning are right; the exact menu names move between
-iOS and Android versions and between manufacturers.
+**Verified at the shop, 15 Aug:** the Android scanner in keyboard mode, against the app. It types
+the barcode and its Enter submits, exactly as the counter gun does — so 3.1 and 3.2 are settled
+rather than advice.
+
+**Not verified, and not verifiable from here:** the rest of the steps on the iPad and the phone.
+The profile install, the trust toggle, Add to Home Screen, and the CA install on Android. The
+order and the reasoning are right; the exact menu names move between iOS and Android versions and
+between manufacturers.
 
 **Worth watching on the first session:** whether the barcode box keeps the cursor after a save on
 Android. On the iPad and the laptop it does. If it doesn't there, it is a two-line fix in the app
