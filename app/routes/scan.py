@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
 from app.auth import current_user
@@ -32,8 +32,9 @@ from app.catalogue import (
     parse_expiry,
     resolve_category,
 )
+from app import photos
 from app.db import get_conn
-from app.views import au_date, render
+from app.views import au_date, render, setting
 
 router = APIRouter()
 
@@ -54,6 +55,7 @@ def scan(
     request: Request,
     barcode: str = "",
     added: int | None = None,
+    photo_problem: int | None = None,
     conn: sqlite3.Connection = Depends(get_conn),
 ):
     """Step one: the barcode. Step two if a barcode came with the request."""
@@ -61,7 +63,11 @@ def scan(
     # the new-product form and nobody fills in a name for something that will
     # be rejected on save. A rejected barcode falls back to step one, where
     # the field is focused and ready for another scan.
-    message = ""
+    # A photo that Pillow refused on the previous add. The batch itself saved —
+    # that is the whole point of reporting it here rather than failing the add —
+    # so this says what did not happen, next to the confirmation of what did.
+    message = "The date saved, but that photo did not — it was not an image." \
+        if photo_problem else ""
     barcode = clean_barcode(barcode)
     if barcode:
         barcode, message = parse_barcode(barcode)
@@ -90,6 +96,7 @@ def add(
     name: str = Form(""),
     category: str = Form(""),
     expiry_date: str = Form(""),
+    photo: UploadFile | None = File(None),
     conn: sqlite3.Connection = Depends(get_conn),
     user: dict = Depends(current_user),
 ):
@@ -151,5 +158,32 @@ def add(
         conn.rollback()
         return again(f"Already tracked — expires {au_date(expiry)}.")
 
+    # The photo, last, and never in the way of the date.
+    #
+    # Added 16 Aug. 944 of the shop's 945 products had no picture, because the
+    # only place to attach one was behind the Edit toggle on the product screen
+    # — a trip nobody makes later, for an item they are no longer holding. This
+    # is the moment it is in a hand.
+    #
+    # It is deliberately not allowed to fail the add: the batch is already
+    # written above, and a rejected image says so on the next screen rather than
+    # throwing away a date that was typed correctly. That is the same order of
+    # priorities as everything else here — the date is the point, the photo is a
+    # bonus.
+    stored, problem = photos.store_upload(
+        photo,
+        barcode,
+        max_px=int(setting(conn, "image_max_px", "800")),
+        quality=int(setting(conn, "image_quality", "72")),
+    )
+    if stored:
+        conn.execute(
+            "UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id)
+        )
+
     conn.commit()
+    if problem:
+        return RedirectResponse(
+            f"/scan?added={batch_id}&photo_problem=1", status_code=303
+        )
     return RedirectResponse(f"/scan?added={batch_id}", status_code=303)

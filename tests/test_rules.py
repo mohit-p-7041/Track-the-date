@@ -856,3 +856,93 @@ def test_keyboard_focus_is_visible():
     assert rule, "nothing in app.css gives every focusable thing a focus ring"
     assert re.search(r"outline\s*:", rule.group(1)), \
         f"focus is styled but not outlined: {rule.group(1)!r}"
+
+
+# ------------------------------------------------- the day bands, 16 Aug
+
+def test_the_day_bands_read_as_words_not_numbers():
+    """"Today" and "Tomorrow", not "0 days left" and "1 day left".
+
+    The delete confirmation already says "this expires today" / "tomorrow", and
+    two parts of the same screen must not describe the same day two ways.
+    """
+    from app.catalogue import days_left_label
+
+    assert days_left_label(0) == "Today"
+    assert days_left_label(1) == "Tomorrow"
+    assert days_left_label(2) == "2 days left"
+    assert days_left_label(7) == "7 days left"
+    # Past-date rows are their own group and cannot reach here, but a negative
+    # must never render as "-2 days left" if one ever does.
+    assert days_left_label(-2) == "Today"
+
+
+def test_the_later_heading_follows_the_window_setting():
+    """"More than a week" is only true at a 7-day window.
+
+    The window is a setting, so a shop running 10 days would otherwise be told
+    that 9 days away is "more than a week".
+    """
+    from app.catalogue import later_heading
+
+    assert later_heading(7) == "More than a week"
+    assert later_heading(3) == "More than 3 days"
+    assert later_heading(14) == "More than 14 days"
+
+
+def test_the_name_outweighs_the_date_in_a_row():
+    """Reversed 16 Aug, so it is a rule now rather than an accident.
+
+    The band above the row states the urgency, so the name — the thing being
+    matched against an item in a hand — carries the weight, and the date sits
+    back. Asserted on the declarations themselves: a later edit that quietly
+    swaps them back should go red here rather than in somebody's eyes.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.DOTALL)
+
+    def weight(selector: str) -> int:
+        rule = re.search(r"(?:^|\})\s*\.%s\s*\{([^}]*)\}" % selector, css)
+        assert rule, f".{selector} has no rule in app.css"
+        found = re.search(r"font-weight:\s*(\d+)", rule.group(1))
+        assert found, f".{selector} does not set a font-weight"
+        return int(found.group(1))
+
+    assert weight("item-name") > weight("item-date"), \
+        "the date is back to outweighing the product name"
+
+
+def test_the_bar_stays_put_without_position_sticky():
+    """The shop's handheld is Chrome 50, which sits in the gap where Chrome had
+    no `position: sticky` at all (removed in 37, restored in 56). Without a
+    fallback the bar scrolls away there, which on the one device carried round
+    the aisles means the navigation leaves the screen.
+
+    Asserted three ways, because each is a different way to break it: the
+    fallback must exist, it must not be reachable by print (a bounded, scrolling
+    `main` would put page one on the paper and drop the rest), and it must not
+    hardcode the bar's height — that number is 62px on the laptop and 85px on a
+    phone, and a wrong one hides content behind the bar forever.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.DOTALL)
+
+    start = css.find("@supports not (position: sticky)")
+    assert start != -1, "nothing keeps the bar put where sticky is unsupported"
+
+    depth, end = 0, None
+    for i in range(css.index("{", start), len(css)):
+        if css[i] == "{":
+            depth += 1
+        elif css[i] == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    assert end, "the @supports block is not closed"
+    block = css[start:end]
+
+    assert "@media screen" in block, \
+        "the fallback is not scoped to screen, so printing the sheet can clip it"
+    assert re.search(r"main\s*\{[^}]*overflow-y:\s*auto", block), \
+        "the fallback does not give main its own scroller"
+    assert not re.search(r"padding-top:\s*\d", block), \
+        "the fallback hardcodes a bar height, which is not one number"

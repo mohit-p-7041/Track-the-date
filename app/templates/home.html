@@ -89,16 +89,38 @@
     </nav>
   {% endif %}
 
+  {# One band per day rather than one heading for the whole window, from
+     16 Aug — the shape of the app this replaces, and the reason the date inside
+     a row no longer needs to shout: the band above it already said "3 days
+     left". Bands are only emitted for days that have something in them. #}
+
   {% if overdue %}
-    <h2 class="head head-overdue">Past date &mdash; {{ overdue | length }}</h2>
+    <h2 class="head head-band head-overdue">Past date<span class="head-count">{{ overdue | length }}</span></h2>
     {{ batch_list(overdue) }}
   {% endif %}
 
-  <h2 class="head">Due within {{ window }} days &mdash; {{ due | length }}</h2>
-  {% if due %}
-    {{ batch_list(due) }}
-  {% else %}
+  {% for days_left, rows in days %}
+    <h2 class="head head-band">{{ days_left_label(days_left) }}<span class="head-count">{{ rows | length }}</span></h2>
+    {{ batch_list(rows) }}
+  {% endfor %}
+
+  {% if not overdue and not days %}
     <p class="empty">Nothing due in the next {{ window }} days.</p>
+  {% endif %}
+
+  {# Everything past the window. It is on the page rather than hidden by it, but
+     cut to the soonest hundred by default: the shop has 1644 batches out here
+     and none of them is today's job. Same shape as the products screen's
+     "Show all". #}
+  {% if later_total %}
+    <h2 class="head head-band">{{ later_heading(window) }}<span class="head-count">{{ later_total }}</span></h2>
+    {{ batch_list(later) }}
+    {% if later_truncated %}
+      <p class="foot">
+        Showing the {{ later | length }} soonest of {{ later_total }}.
+        <a href="/?{% if selected %}category={{ selected }}&amp;{% endif %}later=all">Show all {{ later_total }}</a>
+      </p>
+    {% endif %}
   {% endif %}
 
   <p class="foot">

@@ -69,3 +69,31 @@ def save(data: bytes, barcode: str, max_px: int = 800, quality: int = 72) -> tup
     staging.replace(target)
 
     return f"{STORED_PREFIX}/{name}", target.stat().st_size
+
+
+def store_upload(upload, barcode: str, max_px: int = 800, quality: int = 72):
+    """Take an uploaded file off a form and store it, or say why not.
+
+    Returns `(stored_path, error)`, and at most one of them is set. `(None,
+    None)` means no file was offered — the normal case, because a photo is
+    optional on every screen that accepts one and must never block an add.
+
+    Extracted 16 Aug when the scan screen started accepting photos too. Both
+    callers need the same four steps in the same order, and the interesting one
+    is the last: Pillow raising on something that is not an image has to become
+    a sentence on the page, not a stack trace in front of somebody standing at a
+    shelf holding the item.
+
+    Read synchronously — both callers are sync routes, so they run in the
+    threadpool and this does not block the event loop while it decodes.
+    """
+    data = upload.file.read() if upload is not None else b""
+    if not data:
+        return None, None
+    if len(data) > MAX_UPLOAD_BYTES:
+        return None, "That photo is too big."
+    try:
+        stored, _size = save(data, barcode, max_px=max_px, quality=quality)
+    except OSError:
+        return None, "That file was not an image."
+    return stored, None

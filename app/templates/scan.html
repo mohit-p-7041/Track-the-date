@@ -10,6 +10,23 @@
   </datalist>
 {% endmacro %}
 
+{% macro photo_field() %}
+  {# Optional, last, and never in the way of the date.
+
+     `capture="environment"` where the product edit screen uses a plain chooser:
+     there you might be picking a picture you already have, here you are standing
+     at the shelf holding the thing, so Android should open the camera rather than
+     ask which app to use. Desktop browsers ignore the attribute and show the
+     normal file picker.
+
+     No live-preview panel: that needs getUserMedia, which the shop's Chrome 50
+     handheld does not expose. A file input needs neither that nor a secure
+     context, so this is the control that works on every device in the shop. #}
+  <label class="label" for="photo">Photo <span class="hint">optional</span></label>
+  <input class="field" type="file" id="photo" name="photo"
+         accept="image/*" capture="environment">
+{% endmacro %}
+
 {% block content %}
 <div class="form-wrap">
 
@@ -50,7 +67,8 @@
   {% elif product %}
 
     {# Known barcode: nothing to fill in but the date, and it already has focus. #}
-    <form class="card" method="post" action="/scan/add">
+    <form class="card" id="photo-form" method="post" action="/scan/add"
+          enctype="multipart/form-data">
       <input type="hidden" name="barcode" value="{{ barcode }}">
 
       <div class="known">
@@ -75,14 +93,22 @@
       <input class="field field-big" id="expiry" name="expiry_date" type="date"
              required autofocus>
 
+      {# Only when there is no picture yet. 944 of 945 products had none, and
+         this is the one moment the item is in somebody's hand. Replacing an
+         existing photo stays on the product screen — it is not worth a control
+         on the path used hundreds of times a week. #}
+      {% if not product.image_path %}{{ photo_field() }}{% endif %}
+
       <button class="btn btn-wide" type="submit">Save</button>
     </form>
 
   {% else %}
 
-    {# Unknown barcode: the short new-product form. Category and photo are
-       optional and neither blocks the add. #}
-    <form class="card" method="post" action="/scan/add">
+    {# Unknown barcode: the short new-product form. Category and photo are both
+       optional and neither blocks the add — the photo is attached after the
+       batch is written, so a picture Pillow refuses cannot cost you the date. #}
+    <form class="card" id="photo-form" method="post" action="/scan/add"
+          enctype="multipart/form-data">
       <input type="hidden" name="barcode" value="{{ barcode }}">
       <p class="note">New barcode &mdash; {{ barcode }}</p>
 
@@ -94,6 +120,8 @@
 
       <label class="label" for="expiry">Expiry date</label>
       <input class="field field-big" id="expiry" name="expiry_date" type="date" required>
+
+      {{ photo_field() }}
 
       <button class="btn btn-wide" type="submit">Save</button>
     </form>
@@ -111,4 +139,8 @@
   {# Only on the barcode step. The date step has nothing to scan, and the
      counter path should carry no script it does not use. #}
   {% if not barcode %}<script src="{{ asset_url('static/js/scanner.js') }}"></script>{% endif %}
+  {# Shrinks a photo before it goes up, where the browser can do it. It binds to
+     #photo-form and returns without touching anything where it cannot, so the
+     form still posts the original and Pillow produces the same stored image. #}
+  {% if barcode %}<script src="{{ asset_url('static/js/photo.js') }}"></script>{% endif %}
 {% endblock %}

@@ -100,10 +100,17 @@ templates.env.globals["asset_url"] = asset_url
 # The delete-confirmation rule. Both the Due screen and the product screen ask
 # it, so it comes from app/catalogue.py rather than being spelt out in two
 # templates that could drift apart.
-from app.catalogue import days_until, needs_confirmation  # noqa: E402
+from app.catalogue import (  # noqa: E402
+    days_left_label,
+    days_until,
+    later_heading,
+    needs_confirmation,
+)
 
 templates.env.globals["needs_confirmation"] = needs_confirmation
 templates.env.globals["days_until"] = days_until
+templates.env.globals["days_left_label"] = days_left_label
+templates.env.globals["later_heading"] = later_heading
 
 
 def setting(conn: sqlite3.Connection, key: str, default: str) -> str:

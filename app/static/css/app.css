@@ -1,16 +1,24 @@
 /* Track the Date — Tecoma
    Clean and fast. No animation, no transitions — see SPEC.md "UI principles".
-   Sized for an iPad held at arm's length in a shop, and for a laptop screen.
+
+   Sized for an iPad at arm's length and for a laptop screen, plus one phone
+   breakpoint at the bottom of the file (30rem) and a set of fallbacks for the
+   shop's Chrome 50 handheld, which has no CSS Grid, no flexbox `gap`, no
+   `env()` and no `overflow-wrap`.
 
    Colour, added 14 Aug with the COFFEE TIME uplift, does exactly three jobs:
 
      green commits, red removes, yellow is a state and never an action.
 
-   Urgency is deliberately not one of them. An item past its date is a normal,
-   expected state (SPEC.md "Don't treat them as an error condition") and a set
-   of expiry bands was considered and closed off in docs/BACKLOG.md. So no row
-   is ever painted by how soon it dies — the date is promoted by weight, not by
-   colour, and every row reads at the same volume. */
+   Urgency is deliberately not one of them, and still is not. An item past its
+   date is a normal, expected state (SPEC.md "Don't treat them as an error
+   condition"), so **no row is ever painted by how soon it dies** and every row
+   reads at the same volume.
+
+   What changed on 16 Aug is where urgency is *stated* rather than how it is
+   coloured: the Due screen now carries a band per day — Today, Tomorrow, 3 days
+   left — so the heading says when, and the row is free to say what. That is why
+   the product name took the weight and the date gave it up; see .item-date. */
 
 :root {
   /* The forecourt. */
@@ -120,6 +128,45 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+/* ---- keeping the bar put where `position: sticky` does not exist ----
+
+   Chrome had sticky, removed it in 37, and put it back in 56. The shop's
+   Toughpad is on 50, squarely inside that gap, so the bar simply scrolled away
+   there — which on the one device staff carry round the aisles is the screen's
+   navigation leaving.
+
+   Done as a flex column rather than the obvious `position: fixed` plus a
+   `padding-top` on the body, because that padding has to equal the bar's height
+   and the bar does not have one height: 62px on the laptop, 85px on a phone,
+   and more again the moment a staff name is long enough to wrap the first line.
+   A number that has to be right and cannot be checked is the wrong tool — get
+   it wrong and content sits behind the bar permanently, with no way for anyone
+   in the shop to know why. Here the bar keeps its natural height and `main`
+   takes the rest, so there is nothing to get wrong.
+
+   `@media screen` around it is not decoration: the discount sheet prints, and a
+   `main` with `overflow-y: auto` and a bounded height would put page one on the
+   paper and silently drop the rest. Same trap as .sheet-scroll further down. */
+@supports not (position: sticky) {
+  @media screen {
+    html, body { height: 100%; }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bar { flex: 0 0 auto; }
+
+    /* The page scrolls in here instead of in the document. */
+    main {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
 }
 
 /* The shop's mark. The cup is drawn in the same stroke as the action icons, so
@@ -413,6 +460,39 @@ main { padding-bottom: 6rem; }
    normal part of Saturday and forty alarmed rows would say otherwise. */
 .head-overdue { color: var(--reduced); }
 
+/* ---- the list bands, 16 Aug ----
+
+   A heading inside a list is a different object from a heading above a card.
+   The settings screen uses .head the second way — a label sitting on the page
+   ground with air around it — and it stays exactly as it was. On the Due screen
+   a heading is a divider *in* a list, read at speed while scrolling past it, so
+   it is a filled band running the full width with its count ranged right.
+
+   This is the piece that let the row hierarchy invert. The band above a row now
+   states the urgency, so the date inside the row no longer has to; see
+   .item-date below. */
+.head-band {
+  display: flex;
+  align-items: baseline;
+  margin: 0;
+  padding: 0.55rem 1rem;
+  background: var(--counter);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.head-count {
+  margin-left: auto;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* .items carries its own hairlines, so where a band meets a list the two would
+   draw one on top of the other and the rule would read twice as heavy as every
+   other rule on the screen. */
+.head-band + .items { border-top: 0; }
+.items + .head-band { border-top: 0; }
+
 .items {
   list-style: none;
   margin: 0;
@@ -458,21 +538,34 @@ main { padding-bottom: 6rem; }
   text-decoration: none;
 }
 
-/* The date is why the row exists. It used to be the smallest, greyest thing on
-   it while the name was bold and black, which is backwards for someone reading
-   down a list looking for what dies first. The order is unchanged — staff know
-   it from the old app — but the weights have swapped. Tabular figures make the
-   dates line up as a true column. */
+/* The weights swapped back on 16 Aug, and this comment is the third thing to
+   sit here, so it is worth being clear about why rather than just what.
+
+   The 14 Aug version made the date bold and black on the grounds that the date
+   is why the row exists — true when a single "Due within 7 days" heading was
+   the only thing telling you when anything died, because then the date was the
+   only place the urgency lived.
+
+   The bands changed that. "3 days left" now runs across the screen above the
+   row, so by the time you reach the row you already know when. What you do not
+   know is *which item this is*, and that is the name — the thing being matched
+   against something held in a hand. So the name takes the weight and the date
+   steps back to a quiet line above it, which is also the shape staff read in
+   beep for two years.
+
+   Tabular figures stay: the dates still line up as a true column down the list,
+   which is most of what made them scannable in the first place. */
 .item-date {
-  font-size: 0.95rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 0.8rem;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  color: var(--espresso);
+  color: var(--steam);
 }
 
 .item-name {
-  font-weight: 500;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--espresso);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1120,7 +1213,11 @@ input[list].field {
      The cell padding comes in to 0.2rem here to buy the columns the room. */
   .sheet-table { font-size: 0.75rem; table-layout: fixed; }
   .sheet-table td, .sheet-table th { padding: 0.35rem 0.2rem; }
-  .col-name { overflow-wrap: anywhere; }
+  /* `word-wrap` first: it is the old name for the same thing and the shop's
+     Chrome 50 has it, while `overflow-wrap` came in at Chrome 55 and its check
+     page reported NO. Without the older spelling a long product name overflowed
+     its fixed-layout cell instead of breaking inside it. */
+  .col-name { word-wrap: break-word; overflow-wrap: anywhere; }
   .col-tick { width: 1.3rem; }
   .col-date { width: 5rem; }
   .col-barcode { width: 6.3rem; }

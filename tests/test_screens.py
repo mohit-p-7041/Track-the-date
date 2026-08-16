@@ -10,6 +10,8 @@ lists the acceptance criteria each one has to meet.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from conftest import STAFF_NAME, STAFF_PIN, days
 
@@ -112,14 +114,23 @@ def test_home_shows_due_items(client, sample):
     assert "Monster Ultra Zero 500ml" in response.text  # 4 days overdue
 
 
-def test_home_hides_items_beyond_the_window(client, sample, db):
-    """The 30-day batch exists but must not appear. Only its product's other
-    batch puts that name on the page, so check the date instead."""
+def test_home_puts_items_beyond_the_window_under_their_own_heading(client, sample, db):
+    """Changed 16 Aug with the day bands, and it is a reversal worth stating.
+
+    The 30-day batch used to be absent from this screen. It is now on it, under
+    "More than a week" — the window stopped deciding what is visible and started
+    deciding where the per-day bands stop. Only its product's other batch puts
+    that name on the page, so check the date instead.
+    """
     far_off = db.execute(
         "SELECT expiry_date FROM batches WHERE id = ?", (sample["batches"]["outside"],)
     ).fetchone()[0]
     body = client.get("/").text
-    assert _au(far_off) not in body
+    assert _au(far_off) in body
+    assert "More than a week" in body
+    # ...and below every band that is somebody's job sooner.
+    assert body.index("Past date") < body.index("More than a week")
+    assert body.index("Tomorrow") < body.index("More than a week")
 
 
 def test_home_shows_a_discounted_batch(client, sample, db):
@@ -149,7 +160,7 @@ def test_home_includes_the_window_edge(client, sample, db):
 def test_home_puts_overdue_first(client, sample):
     """Past-date items sit above upcoming ones. Normal state, top of the page."""
     body = client.get("/").text
-    assert body.index("Past date") < body.index("Due within")
+    assert body.index("Past date") < body.index("Tomorrow")
 
 
 def test_overdue_is_not_an_error(client, sample):
@@ -180,10 +191,11 @@ def test_every_due_row_has_buttons_for_both_actions(client, sample):
     were "delete" and "discount". The buttons say what they do.
     """
     body = client.get("/").text
-    # Four rows are on the page: overdue, +2, +7 and the discounted +1. The +30
-    # batch is outside the window, so it is not here to be acted on.
-    assert body.count("/delete") == 4                   # every row shown
-    assert body.count('value="discounted"') == 3        # not the already-discounted one
+    # All five live rows are on the page from 16 Aug: overdue, the discounted +1,
+    # +2, +7, and the +30 under "More than a week". Being further off is not a
+    # reason to be unable to act on it.
+    assert body.count("/delete") == 5                   # every row shown
+    assert body.count('value="discounted"') == 4        # not the already-discounted one
     assert body.count("/full-price") == 1               # only the discounted one
     assert 'value="/"' in body                          # comes back to the Due screen
 
@@ -204,15 +216,18 @@ def test_the_due_screen_needs_no_javascript(client, sample):
 
 def test_the_delete_confirmation_is_only_on_rows_that_need_asking(client, sample, db):
     """Live batches in `sample`: overdue (past, active), due_soon (+2, active),
-    due_edge (+7, active), outside (+30, beyond the window so not shown),
-    discounted (+1). Of the four on the page, only the two in-date active ones
-    ask — the past-date one does not, and neither does the discounted one.
+    due_edge (+7, active), outside (+30, active, now shown under "More than a
+    week"), discounted (+1). All five are on the page from 16 Aug, and the three
+    active in-date ones ask before deleting — the past-date one does not, and
+    neither does the discounted one. The rule is about the batch, not about
+    which band it happens to sit in.
     """
     body = client.get("/").text
-    assert body.count('<details class="confirm">') == 2
+    assert body.count('<details class="confirm">') == 3
     collapsed = " ".join(body.split())
     assert "This expires in 2 days. Delete it?" in collapsed
     assert "This expires in 7 days. Delete it?" in collapsed
+    assert "This expires in 30 days. Delete it?" in collapsed
 
 
 @pytest.mark.parametrize("path,expected_class", [
@@ -1004,10 +1019,15 @@ def test_the_photo_script_sends_the_whole_form(client):
     That was right when the photo had a route of its own. Now name, category and
     photo save together, so sending just the image would discard a rename typed
     in the same panel — and the shrink path is the one an iPad always takes.
+
+    Guaranteed structurally since 16 Aug rather than by assembling a FormData
+    carefully: the script puts the shrunk image back into the file input and
+    lets the browser submit the form, so every field on it goes by definition
+    and there is no second copy of the form to keep in step.
     """
     js = client.get("/static/js/photo.js").text
-    assert "new FormData(form)" in js
-    assert "data.set('photo'" in js
+    assert "input.files = carrier.files" in js, "the shrunk image is not put back"
+    assert "form.submit()" in js, "the form is not submitted by the browser"
     assert 'button[type="submit"]' in js, "a bare button selector grabs Camera"
 
 
@@ -1355,12 +1375,14 @@ def test_the_expiry_window_can_be_changed_and_the_screens_follow(client, sample,
         "SELECT value FROM settings WHERE key = 'expiry_window_days'"
     ).fetchone()[0] == "3"
 
-    # Checked on the date, not the product name: the Tim Tams also carry a
-    # discounted date tomorrow, which is inside any window, so the name stays on
-    # the page while the 7-day date must drop off it.
+    # Changed 16 Aug with the day bands. The window no longer decides what is on
+    # this screen — it decides where the per-day bands stop. The 7-day item is
+    # still on the page with a 3-day window; it has moved out of the bands and
+    # under "More than 3 days".
     body = client.get("/").text
-    assert _au(edge) not in body
-    assert "Due within 3 days" in body
+    assert _au(edge) in body
+    assert "More than 3 days" in body
+    assert "More than a week" not in body       # the wording follows the window
 
 
 def test_an_absurd_window_is_clamped_not_crashed(client, db):
@@ -1906,3 +1928,110 @@ def _from_au(rendered: str) -> str:
     import datetime as dt
 
     return dt.datetime.strptime(rendered.strip(), "%d %b %Y").date().isoformat()
+
+
+# ------------------------------------- a photo on the scan path, 16 Aug
+
+def test_scanning_a_known_product_without_a_photo_offers_one(client, sample):
+    """944 of the shop's 945 products had no picture, because the only place to
+    attach one was behind the Edit toggle on the product screen — a trip nobody
+    makes later, for an item they are no longer holding."""
+    body = client.get("/scan?barcode=9300601234567").text
+    assert 'type="file"' in body
+    assert 'name="photo"' in body
+    assert 'enctype="multipart/form-data"' in body
+
+
+def test_scanning_a_new_barcode_offers_a_photo(client):
+    body = client.get("/scan?barcode=9999999999999").text
+    assert 'name="photo"' in body
+    assert 'enctype="multipart/form-data"' in body
+
+
+def test_the_scan_photo_opens_the_camera_not_a_file_browser(client, sample):
+    """`capture` is the difference between "which app?" and the camera opening.
+
+    Asserted as a contrast, because the point is that the two screens differ on
+    purpose: on the product screen you may be picking a picture you already
+    have, so it stays a plain chooser; on the scan path you are standing at the
+    shelf holding the item, so Android should go straight to the camera.
+    """
+    assert 'capture="environment"' in client.get("/scan?barcode=9999999999999").text
+
+    edit = client.get(f"/products/{sample['products']['monster']}").text
+    assert 'name="photo"' in edit, "the product screen still takes a photo"
+    assert "capture=" not in edit, "the product screen must stay a plain chooser"
+
+
+def test_a_product_that_already_has_a_photo_is_not_asked_again(client, sample, db):
+    """Replacing one stays on the product screen. The add path is used hundreds
+    of times a week and does not carry a control for the rare case."""
+    product = sample["products"]["monster"]
+    db.execute("UPDATE products SET image_path = ? WHERE id = ?",
+               ("data/photos/9300601234567.jpg", product))
+    db.commit()
+    body = client.get("/scan?barcode=9300601234567").text
+    assert 'name="photo"' not in body
+
+
+def test_a_photo_taken_while_scanning_is_saved_against_the_product(client, sample, db):
+    client.post("/scan/add", data={
+        "barcode": "9300609876543", "expiry_date": days(5),
+    }, files={"photo": ("counter.jpg", _photo_bytes(), "image/jpeg")})
+    stored = db.execute(
+        "SELECT image_path FROM products WHERE barcode = ?", ("9300609876543",)
+    ).fetchone()[0]
+    assert stored == "data/photos/9300609876543.jpg"
+
+
+def test_a_bad_photo_does_not_cost_you_the_date(client, sample, db):
+    """The asymmetry that matters, and the opposite of the product screen's rule.
+
+    There, one form means one save and a refused photo takes the name with it.
+    Here the date is the entire point of the screen and the photo is a bonus, so
+    the batch is written first and a picture Pillow cannot read is reported
+    afterwards — never by throwing away a date that was typed correctly.
+    """
+    before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    response = client.post("/scan/add", data={
+        "barcode": "9300609876543", "expiry_date": days(6),
+    }, files={"photo": ("notes.txt", b"not a photograph", "text/plain")},
+        follow_redirects=True)
+
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before + 1
+    assert db.execute(
+        "SELECT image_path FROM products WHERE barcode = ?", ("9300609876543",)
+    ).fetchone()[0] is None
+    assert "photo did not" in response.text
+
+
+def test_photo_js_does_not_steer_the_browser_itself(client):
+    """The 16 Aug Android bug, as a rule.
+
+    photo.js used to POST the form with fetch and then move the browser to a
+    destination written into the markup as `data-done`. That was right for the
+    one form carrying the attribute and `undefined` for the scan form that was
+    not, so a photo which saved perfectly well landed the person on
+    `/undefined` and a 404. Reading `response.url` instead only moved the
+    problem: on the paths where the server re-renders rather than redirects —
+    "already tracked", "give it a name" — that is the POST url, and following
+    it with a GET is another dead end.
+
+    The script now swaps the shrunk file into the input and lets the browser
+    submit the form, so redirects, re-rendered errors and the back button are
+    all the browser's business. Asserted on the source because the failure is
+    invisible from Python: every server-side test posts the form directly and
+    never runs a line of this file.
+    """
+    # Comments stripped: this file explains the bug it used to have, and the
+    # explanation names both of the things being asserted against.
+    js = client.get("/static/js/photo.js").text
+    code = re.sub(r"/\*.*?\*/", "", js, flags=re.DOTALL)
+    code = re.sub(r"^\s*//.*$", "", code, flags=re.MULTILINE)
+
+    assert "dataset.done" not in code, "the destination is hardcoded in the markup again"
+    assert "response.url" not in code, "following the response url breaks re-rendered errors"
+    assert "form.submit()" in code, "the form no longer submits itself"
+
+    # And nothing renders the attribute any more either.
+    assert "data-done" not in client.get("/scan?barcode=9999999999999").text
