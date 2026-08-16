@@ -1,6 +1,7 @@
 # The shop laptop
 
-Acer Aspire A515-51G — `LAPTOP-S65BPC8C`
+Acer Aspire A515-51G — `TECOMA` (renamed from `LAPTOP-S65BPC8C` on 16 Aug, so the machine
+answers to `tecoma.local`)
 
 | | |
 |---|---|
@@ -97,17 +98,56 @@ With the app running on demand this is much less critical than it would be for a
 server — a reboot outside a scan session costs nothing, and the next session just starts the app
 again. Set active hours anyway so an update doesn't restart the machine mid-session.
 
+## The address, as actually configured
+
+Set at the shop on 16 Aug. **These are the live numbers, not an example** — the certificate is
+issued for them and every home-screen icon in the shop points at them.
+
+| | |
+|---|---|
+| Computer name | `TECOMA`, so `tecoma.local` resolves for the iPads |
+| IP address | **`192.168.31.240`** — static, set on the laptop |
+| Subnet mask | `255.255.255.0` |
+| Gateway / DNS / DHCP | **`192.168.31.99`** — all three are the same box |
+| Adapter | `Wi-Fi` (Qualcomm Atheros QCA9377). No space in the name, so the `netsh` quoting is safe in PowerShell |
+| Was, on DHCP | `192.168.31.102`, lease from the same `.99` box |
+
+```
+https://tecoma.local:8443       the iPads — iOS resolves .local
+https://192.168.31.240:8443     the Android scanner — it does not
+```
+
+**It is static on the laptop, not reserved on the router** — option B in
+`docs/WINDOWS-SETUP.md`, chosen because the router was not available to log into at the time.
+That is worth knowing for two reasons. The laptop will now try to use `192.168.31.240` on
+*whatever* network it joins, so it needs putting back to DHCP before it goes anywhere else:
+
+```powershell
+netsh interface ip set address name="Wi-Fi" dhcp
+netsh interface ip set dns name="Wi-Fi" dhcp
+```
+
+And nothing on the router knows `.240` is spoken for. It sits well clear of the DHCP pool — the
+laptop was handed `.102`, so the pool starts around `.100` — and `ping 192.168.31.240` answered
+"destination host unreachable" from the laptop's own address before it was taken, meaning nothing
+was there. If a clash ever does happen, reserving it properly on the router is the permanent fix.
+
+**The gateway is `192.168.31.99`, which is unusual** — routers are nearly always `.1`, and the
+DHCP-supplied DNS suffix was `localdomain`. Recorded here because if the shop network is ever
+rebuilt or that box is replaced, this is the number to re-check first.
+
+**There is Symantec VPN software on this machine** — a `Symantec TAP Driver` bound to
+`Ethernet 2`, disconnected as of 16 Aug. It is not interfering, but a VPN client is a classic
+cause of "the laptop is fine and no iPad can reach it", so check it before anything else if that
+ever happens.
+
 ## Let the iPads reach it
 
 **The address is printed for you.** `start.bat` runs `scripts/show_address.py` on startup and
 displays both the laptop URL and the iPad URL. No need to read `ipconfig` output.
 
-**Reserve it on the router** so it doesn't change. Otherwise the iPad bookmarks break the next
-time the router reassigns addresses, usually on a day when you're busy.
-
-**Allow it through the firewall** — the first time you run the app, Windows will ask. Tick
-**Private networks** and allow. If you miss the prompt, Windows Defender Firewall → Allow an app
-through firewall → find Python → tick Private.
+**Allow it through the firewall** — `setup.bat` does this when run as administrator. If you miss
+it, Windows Defender Firewall → Allow an app through firewall → find Python → tick Private.
 
 **Check the WiFi allows it.** Some routers have "client isolation" or "AP isolation" enabled,
 which blocks devices from talking to each other. If the iPads can reach the internet but not the
