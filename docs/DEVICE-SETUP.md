@@ -17,6 +17,13 @@ By address:       https://192.168.1.240:8443    <- the number
 addresses; iOS can. The certificate is issued for both, so either is equally valid — this is the
 only reason there are two.
 
+> **At the shop on 16 Aug, `tecoma.local` did not resolve on the iPad and the number did.**
+> The name is still worth having — it survives the address moving, which is the whole reason it
+> exists — but do not stand there retyping it. **If the name does not load, use
+> `https://192.168.31.240:8443` and carry on**; the certificate covers both, so nothing is lost
+> but the safety net. Something on the shop network is dropping mDNS, which is a router setting
+> rather than anything on the laptop or the iPad. Worth one look sometime, not on a Saturday.
+
 ---
 
 ## Part 1 — trust the certificate (every device, once)

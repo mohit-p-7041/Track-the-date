@@ -13,6 +13,41 @@ answers to `tecoma.local`)
 
 Screenshots of these settings are in `docs/reference/laptopinformationreferenceimages/`.
 
+## Where the deploy got to — 16 Aug
+
+Done at the shop, in this order, following `docs/WINDOWS-SETUP.md`:
+
+- **Python 3.12.10**, from python.org. Deliberately *not* 3.14: `requirements.txt` pins Pillow
+  11.1.0, which predates it and has no `cp314` wheel, so pip would fall back to building from
+  source and want a C compiler this laptop does not have. Same trap under `pydantic-core` and
+  `uvicorn[standard]`. 3.12 also matches the dev Mac the tests pass on.
+- **The PATH tick was missed** on the installer's first screen and fixed afterwards with
+  Modify → Advanced Options. Worth knowing that this never blocked anything: `start.bat` and
+  `setup.bat` both try `py -3` before `python`, exactly as they were written to.
+- **Renamed to `TECOMA`**, address pinned static — see the next section for the numbers.
+- **`setup.bat` run as administrator.** Dependencies, database, firewall (8443 and 8000), network
+  profile Private, desktop icon. `mkcert` was not installed, so the certificate step skipped and
+  the app came up on plain http:8000; installing it and re-running fixed that. **Install mkcert
+  before running setup, not after** — it is the difference between one run and three.
+- **Certificate issued** for `tecoma.local`, `192.168.31.240` and `localhost`.
+- **The app runs and was used on the laptop** over `https://localhost:8443` — signed in, scanned a
+  barcode, reached Settings, took a staff account off the list.
+- **One iPad reached it and works**, over the number.
+
+### Left for the next session
+
+- **Idle sleep is still not set to Never.** The one setting on this page that actually loses a
+  session. Do it first.
+- **The Android scanner phone** — the CA certificate is what its camera needs; without it the
+  scanner still works and only photos are lost. `docs/DEVICE-SETUP.md` part 3.
+- **The remaining iPads.**
+- **`git pull` on the laptop.** It was cloned mid-session and is behind the per-day Due bands, the
+  scan-time photo, and the `setup_laptop.py` encoding fix. Re-run `setup.bat` after pulling.
+- **Confirm the import.** `python scripts\check_db.py` should say ~944 products; if it still says
+  0, run `scripts\import_beep.py … --today 2026-08-10`. Pin that date — without it the importer
+  skips everything that expired since the export was taken, which is a week of stock that is
+  still on the shelves and still needs pulling.
+
 ## Is it enough?
 
 Yes, comfortably, and it isn't close.
