@@ -82,13 +82,28 @@ class Setup:
     # -- running things ----------------------------------------------------
 
     def run(self, cmd: list[str], **kw) -> subprocess.CompletedProcess | None:
-        """Run a command, quietly unless it fails. None if --dry-run."""
+        """Run a command, quietly unless it fails. None if --dry-run.
+
+        `encoding` and `errors` are pinned rather than left to the locale. With
+        `text=True` alone Python decodes the child's output using the console
+        code page, which on a stock Windows laptop is cp1252 — and mkcert emits
+        bytes cp1252 has no mapping for. That raises inside the reader *thread*
+        subprocess spawns, so it does not fail the step: setup prints a
+        UnicodeDecodeError traceback and then carries on to say `[ ok ]`, which
+        is precisely the shape of thing that makes somebody stop a deploy and
+        ring you. Seen on the shop laptop 16 Aug, issuing the certificate.
+
+        `errors="replace"` because this output is only ever shown to a person.
+        A mangled character in a message beats a traceback over a step that
+        actually worked.
+        """
         if self.dry_run:
             print(f"  {SKIP} would run: {' '.join(cmd)}")
             return None
         try:
             return subprocess.run(
-                cmd, cwd=ROOT, capture_output=True, text=True, timeout=600, **kw
+                cmd, cwd=ROOT, capture_output=True, text=True, timeout=600,
+                encoding="utf-8", errors="replace", **kw
             )
         except (OSError, subprocess.SubprocessError) as exc:
             self.fail(f"could not run {cmd[0]}: {exc}")
