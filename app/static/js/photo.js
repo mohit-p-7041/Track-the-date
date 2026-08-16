@@ -54,36 +54,61 @@
     });
   }
 
-  function upload(blob) {
-    button.disabled = true;
-    button.textContent = 'Saving…';
-    /* The whole form, with the shrunk image swapped in for the chosen file.
-       This used to send a FormData containing only the photo, which was right
-       when the photo had a route of its own — since 13 Aug name, category and
-       photo save together, and posting just the image would silently discard a
-       rename somebody had typed in the same panel. */
-    var data = new FormData(form);
-    data.set('photo', blob, 'photo.jpg');
-    return fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin' })
-      .then(function () { window.location.href = form.dataset.done; });
+  /* Can the shrunk image be put back into the file input? A `FileList` is
+     read-only, and a DataTransfer is the only way to build one. Chrome 60 and
+     up; the shop's Chrome 50 says no and posts the original instead. */
+  function canSwapFile() {
+    try {
+      return typeof DataTransfer !== 'undefined' && !!new DataTransfer().items;
+    } catch (e) {
+      return false;
+    }
   }
 
+  var swapped = false;
+
+  /* The form posts itself.
+
+     This used to send the form with `fetch` and then move the browser by hand,
+     which is where two bugs came from and neither was subtle once seen. The
+     destination was read from a `data-done` attribute, so the product screen
+     went to the right place and the scan form — which never had the attribute —
+     navigated to the string "undefined" and a 404, having saved perfectly well
+     first. Reading `response.url` instead only moved the problem: it is the
+     address of the *last* response, which is the redirect target on success and
+     the POST url itself when the server re-renders the page to say "already
+     tracked" or "give it a name". Following that with a GET is a dead end too.
+
+     So the script no longer decides where anyone goes. It swaps the shrunk
+     image into the file input and lets the browser submit the form the way it
+     would have anyway — which handles a 303, a re-rendered page with an error
+     on it, and the back button, none of which this file has to know about.
+     Enhancement only, as the top of the file says. */
   form.addEventListener('submit', function (event) {
+    if (swapped) return;                     // our own submit; let it through
+
     /* A photo taken with the camera is already shrunk and waiting. */
-    if (captured) {
-      event.preventDefault();
-      upload(captured);
-      return;
-    }
-
+    var ready = captured;
     var file = input.files && input.files[0];
-    if (!file) return;                       // nothing chosen; let it post
-    event.preventDefault();
+    if (!ready && !file) return;             // nothing to send; let it post
 
-    shrink(file).then(upload).catch(function () {
-      /* Anything unexpected: fall back to the ordinary upload rather than
-         leaving someone staring at a disabled button. */
-      button.disabled = false;
+    /* Nothing can be swapped in, so send what was chosen. The server resizes it
+       to the same stored image regardless — this only ever saved wire time. */
+    if (!canSwapFile()) return;
+
+    event.preventDefault();
+    button.disabled = true;
+    button.textContent = 'Saving…';
+
+    var work = ready ? Promise.resolve(ready) : shrink(file);
+    work.then(function (blob) {
+      var carrier = new DataTransfer();
+      carrier.items.add(new File([blob], 'photo.jpg', { type: 'image/jpeg' }));
+      input.files = carrier.files;
+    }).catch(function () {
+      /* Anything unexpected: send the original rather than nothing. */
+    }).then(function () {
+      swapped = true;
       form.submit();
     });
   });

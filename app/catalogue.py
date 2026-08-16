@@ -157,6 +157,40 @@ def days_until(expiry, today=None) -> int | None:
     return None if expiry_date is None else (expiry_date - today_date).days
 
 
+def days_left_label(days_left: int) -> str:
+    """The heading a batch sits under on the Due screen.
+
+    Added 16 Aug, replacing the single "Due within N days" heading with one band
+    per day — the shape the old beep app used, and the one staff read for two
+    years before this existed. The section now carries the urgency, which is why
+    the date inside a row could stop shouting: you already know it is three days
+    out because you scrolled past a band that says so.
+
+    "Today" and "Tomorrow" rather than "0 days left" and "1 day left", matching
+    the words the delete confirmation already uses ("this expires today"). A
+    negative number cannot reach here — past-date rows are their own group — but
+    it is folded into Today rather than rendering "-2 days left" if it ever did.
+    """
+    if days_left <= 0:
+        return "Today"
+    if days_left == 1:
+        return "Tomorrow"
+    return f"{days_left} days left"
+
+
+def later_heading(window: int) -> str:
+    """The heading for everything past the window.
+
+    Reads "More than a week" at the default 7, which is the wording asked for
+    and the wording that is true. At any other window the number is spelt out,
+    because a shop running a 10-day window would otherwise be told that 9 days
+    is "more than a week".
+    """
+    if window == 7:
+        return "More than a week"
+    return f"More than {window} days"
+
+
 def needs_confirmation(status: str, expiry, today=None) -> bool:
     """Whether deleting this batch should ask first.
 

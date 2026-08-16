@@ -54,8 +54,25 @@ These were considered and settled. Don't "improve" them into something else.
 - **No counting.** A batch is "this product has stock dying on this date", not a quantity. The
   `quantity` column exists, defaults to 1, and is never shown or edited. A second item is only
   entered when its date differs.
-- **One 7-day window**, not a set of bands. Read `expiry_window_days` from settings. Items past
-  their date and not yet resolved are normal, not an error.
+- **One band per day on the Due screen.** Amended 16 Aug, and **built** the same day, replacing
+  "one 7-day window, not a set of bands" — asked for directly, to match the beep app staff read
+  for two years. `Past date`, then `Today`, `Tomorrow`, `3 days left` … to the edge of the
+  window, then one group for everything beyond it. A band is only emitted for a day that has
+  something in it. Labels come from `days_left_label()` / `later_heading()` in `app/catalogue.py`,
+  never spelt out in a template.
+  Two things this changed, both deliberate. **`expiry_window_days` no longer decides what is on
+  the screen** — it decides where the per-day bands stop and `More than a week` starts; nothing
+  live is hidden from the Due screen any more. And that group is **capped at `PAGE` with a "show
+  all" link**, the same shape the products screen uses, because the shop's data puts 1644 batches
+  in it and a Chrome 50 handheld should not be handed a megabyte of HTML on its way to today.
+  Still true, and still the reason bands are safe: **no row is painted by how soon it dies.** The
+  urgency is in the heading, which is exactly why the row could stop shouting — see the next line.
+- **The product name outweighs the date in a row.** Amended 16 Aug, reversing the 14 Aug weights.
+  Once a band above the row says "3 days left", the date has already been read; what you still do
+  not know is which item this is, and that is what gets matched against something in a hand. The
+  date stays as a quiet line above the name, tabular so the column still aligns. Enforced by
+  `test_the_name_outweighs_the_date_in_a_row`.
+- Items past their date and not yet resolved are normal, not an error.
 - **No shelf location field.** Considered and rejected — it slows down entry.
 - **Categories are optional and grow by themselves.** The table starts empty. Staff pick or type
   one while scanning; it attaches to the product so it covers every batch of that barcode.

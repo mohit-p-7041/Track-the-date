@@ -227,30 +227,24 @@ def edit_product(
         (name, category_id, product_id),
     )
 
-    # Read synchronously: this route resizes an image, and a sync route runs in
-    # the threadpool instead of blocking the event loop while it does.
-    data = photo.file.read() if photo is not None else b""
-    if data:
-        if len(data) > photos.MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail="That image is too big")
-        try:
-            stored, _size = photos.save(
-                data,
-                product["barcode"],
-                max_px=int(setting(conn, "image_max_px", "800")),
-                quality=int(setting(conn, "image_quality", "72")),
-            )
-        except OSError:
-            # Not an image, or one Pillow cannot read. Say so on the page rather
-            # than showing a stack trace to somebody holding an iPad.
-            #
-            # The name and category go with it: one form, one save. The rollback
-            # is explicit rather than load-bearing — get_conn closes without
-            # committing, which discards them anyway — but it says so, and it is
-            # what keeps this correct if a commit is ever added above.
-            conn.rollback()
-            return _detail_page(request, conn, product_id, editing=True,
-                                message="That file was not an image.")
+    # Shared with the scan screen since 16 Aug — see photos.store_upload().
+    # An oversize file used to raise a bare 413 here, which reaches an iPad as a
+    # browser error page; it is now the same kind of sentence as "that file was
+    # not an image", on the page, with the form still filled in.
+    stored, problem = photos.store_upload(
+        photo,
+        product["barcode"],
+        max_px=int(setting(conn, "image_max_px", "800")),
+        quality=int(setting(conn, "image_quality", "72")),
+    )
+    if problem:
+        # The name and category go with it: one form, one save. The rollback is
+        # explicit rather than load-bearing — get_conn closes without committing,
+        # which discards them anyway — but it says so, and it is what keeps this
+        # correct if a commit is ever added above.
+        conn.rollback()
+        return _detail_page(request, conn, product_id, editing=True, message=problem)
+    if stored:
         conn.execute("UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id))
 
     conn.commit()

@@ -33,7 +33,7 @@
 
       <form class="edit-form" id="photo-form" method="post"
             action="/products/{{ product.id }}/edit" enctype="multipart/form-data"
-            data-done="/products/{{ product.id }}">
+            >
 
         <label class="label" for="name">Name</label>
         <input class="field" id="name" name="name" value="{{ product.name }}"
@@ -81,7 +81,7 @@
     </p>
   </div>
 
-  <h2 class="head">Dates &mdash; {{ batches | length }}</h2>
+  <h2 class="head head-band">Dates<span class="head-count">{{ batches | length }}</span></h2>
 
   <ul class="items">
     {% for b in batches %}
