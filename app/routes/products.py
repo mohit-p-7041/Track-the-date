@@ -67,6 +67,24 @@ def _tokens(query: str) -> list[str]:
     return (query or "").replace("’", "'").split()
 
 
+def _like(token: str) -> str:
+    """One search word as a LIKE pattern, with its wildcards defanged.
+
+    `%` and `_` mean "anything" and "any one character" to LIKE, so a query
+    containing either matched far more than the person asked for — typing a
+    single `%` returned all 945 products rather than the ones with a percent
+    sign in the name. Never an injection (the value is bound, not spliced), but
+    a wrong answer, and live search makes it worse: the wildcards fire halfway
+    through typing, so the list silently fills up with everything.
+
+    The backslash is escaped first, or escaping the others would double back on
+    it. Matched by ESCAPE '\\' on every LIKE this builds.
+    """
+    for char in ("\\", "%", "_"):
+        token = token.replace(char, "\\" + char)
+    return f"%{token}%"
+
+
 @router.get("/products")
 def product_list(
     request: Request,
@@ -84,7 +102,10 @@ def product_list(
     # all-words-must-match search would drop entirely.
     if tokens:
         score = " + ".join(
-            [f"(CASE WHEN {NORMALISED_NAME} LIKE ? OR p.barcode LIKE ? THEN 1 ELSE 0 END)"]
+            [
+                f"(CASE WHEN {NORMALISED_NAME} LIKE ? ESCAPE '\\' "
+                f"OR p.barcode LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)"
+            ]
             * len(tokens)
         )
     else:
@@ -92,7 +113,8 @@ def product_list(
 
     params: list = []
     for token in tokens:
-        params += [f"%{token}%", f"%{token}%"]
+        pattern = _like(token)
+        params += [pattern, pattern]
 
     where = ["1 = 1"]
     if category == "none":

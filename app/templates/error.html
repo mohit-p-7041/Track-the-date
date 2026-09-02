@@ -1,0 +1,59 @@
+{# The page staff see when something has gone wrong.
+
+   Deliberately standalone: it does not extend base.html and it needs nothing
+   from the database. base.html wants `shop_name` from the settings table and
+   the signed-in user, and an error page that has to query a database in order
+   to say "something went wrong" is one that fails hardest exactly when it is
+   most needed — a locked file or a broken connection would turn a tidy message
+   back into a stack trace. Everything here is literal, so this page renders
+   whatever else is on fire.
+
+   The cup is inlined for the same reason: base.html holds the sprite, and this
+   template does not have it.
+
+   What replaced this: a raw `{"detail":"Not Found"}` in the browser. On an
+   iPad that reads as the app being broken rather than a link being stale. #}
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#00693c">
+  <title>{{ heading }} — Track the Date</title>
+  <link rel="icon" href="/static/icons/icon-32.png" sizes="32x32">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+  <header class="bar">
+    <a class="mark" href="/">
+      <svg class="mark-cup" aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+        <path d="M4 8h11v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5Z"/>
+        <path d="M15 9h2a2.5 2.5 0 0 1 0 5h-2"/>
+        <path d="M7.5 2v2.5M11.5 2v2.5"/>
+      </svg>
+      <span class="mark-word">Coffee Time</span>
+    </a>
+  </header>
+
+  <main>
+    <div class="form-wrap">
+      <div class="card">
+        <h1 class="known-name">{{ heading }}</h1>
+        <p class="note">{{ detail }}</p>
+
+        {# Always a way out. The nav bar is not on this page, so the way back
+           has to be in the page itself. #}
+        <p class="note">
+          <a class="btn btn-wide" href="/">Back to Due</a>
+        </p>
+        <p class="note">
+          <a href="/products">Products</a> &middot;
+          <a href="/scan">Scan</a>
+        </p>
+      </div>
+    </div>
+  </main>
+
+</body>
+</html>
