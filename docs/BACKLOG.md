@@ -278,9 +278,13 @@ real iPad session on 13 Aug. They are specified in `docs/ITERATION-2.md`; in pri
    set, not the 2 of 954 the punch list recorded, confirmed against the pre-migration backup — so
    there was no data to lose. Removed from `schema.sql` too, or a fresh laptop database would
    still have had it.
-8. `[ ]` **The photo mount ignores `TTD_PHOTO_DIR`.** `app/main.py:35` hardcodes `data/photos`
-   while `photos.py` honours the variable, so uploads and serving can disagree. Production is
-   unaffected — both resolve the same when the variable is unset. After Saturday.
+8. `[x]` **The photo mount ignores `TTD_PHOTO_DIR`.** Was a `StaticFiles` mount over a hardcoded
+   `data/photos` while `photos.py` honoured the variable, so uploads and serving could disagree
+   and every photo rendered broken wherever the variable was set. Fixed by making photos a
+   **route** that resolves `photos.photo_dir()` per request — a mount binds its directory once at
+   import, which is exactly why no test caught it. See the comment above `photo_file` in
+   `app/main.py`. This checkbox was left unticked after the fix landed; ticked 3 Sep on finding
+   the code already correct.
 9. `[x]` **A visual uplift, and one colour for Delete.** Done 14 Aug. The app worked and looked
    like nothing in particular; it now looks like the shop. The whole change is CSS, Jinja and
    hand-drawn inline SVG — no build step, no npm, no CDN, no motion.

@@ -99,6 +99,37 @@ These were considered and settled. Don't "improve" them into something else.
   startup — a nightly job would never fire. An opt-in exists and is **off** by default:
   `python scripts/setup_laptop.py --autostart` drops the same shortcut in the Startup folder,
   `--no-autostart` takes it out again. Don't make it the default without asking.
+- **The home-screen icon opens in Safari, not standalone.** Added 3 Sep. iOS blocks
+  `getUserMedia` in a standalone home-screen web app on the shop's iPads, so the "Scan with
+  camera" button never even appeared and aisle scanning was dead from the icon.
+  `apple-mobile-web-app-capable` is `"no"` in `base.html` and must stay so — the address bar is
+  the price of the camera. This is iOS only: `manifest.json` still says `display: standalone`,
+  because the Android scanner phone has no such restriction. An iPad holding an icon added before
+  the change must remove and re-add it. Enforced by
+  `test_the_home_screen_icon_opens_in_safari_for_the_camera`.
+- **Responses are compressed and versioned assets are cached hard.** Added 2 Sep, measured, not
+  guessed: the Due screen was 485 KB of HTML and is 20 KB gzipped — about 2.5s of a weak link, on
+  the first page of every session. Level 6, not the default 9, which costs several times the CPU
+  for about one percent. A URL carrying `?v=` was built by `asset_url()`/`photo_url()` and stamped
+  with the file's mtime, so it can be kept for a year; anything unstamped gets five minutes,
+  because the icons and `manifest.json` are referenced by plain path. Don't remove either — both
+  are invisible on the dev laptop and painful in the shop.
+- **A photo can never cost you the date.** `store_upload` catches *everything*, not just
+  `OSError`. On the scan screen the batch is inserted before the photo is processed and the commit
+  is after it, so an escaping exception rolls back a date somebody typed correctly. This is why
+  the broad `except` is there — do not narrow it. A 730 KB PNG that decodes to 240 million pixels
+  raises `DecompressionBombError`, which is not an `OSError`, and that is exactly how this was
+  found.
+- **Row buttons keep a 44px touch target without growing.** Discount and Delete render 31px and
+  are stretched to 44 by a `::after` on `.btn-small`, **vertically only** — there are five pixels
+  between the two buttons, so a sideways stretch would put Delete's target under Discount's label.
+  Growing the padding instead would cost 13px on every one of 500 rows. Enforced by
+  `test_the_row_buttons_keep_a_thumb_sized_target`.
+- **Error pages say words, and a redirect stays a redirect.** 404/422/500 render `error.html`,
+  which extends nothing and queries nothing so it still works when the database is what broke.
+  `current_user` bounces a retired account by raising a **303 with a `Location` header** — the
+  handler must keep passing those straight through as redirects, or the sign-in list quietly
+  stops working.
 - **One address, and it does not move.** `https://tecoma.local:8443` — a name, a reserved number,
   and a fixed port, all three, because each covers the others' failures. Every iPad and the
   scanner phone hold a home-screen icon with that URL baked into it, so a changed port or a
@@ -124,8 +155,13 @@ app/
   seed.sql        settings only; no categories are seeded by design
   security.py     PIN hashing
   routes/         one module per area: login, home, scan, products, sheet, settings
-  templates/      Jinja2 — base.html and one per screen
-  static/         css, js (keypad, photo), vendor
+  templates/      Jinja2 — base.html and one per screen, plus:
+                    _product_rows.html  the products results, shared by the full
+                                        page and the ?partial=1 live search
+                    error.html          404/422/500 — extends nothing, queries
+                                        nothing, so it renders when all else fails
+  static/         css, js (keypad, photo, scanner, list-scroll, search-live,
+                  lightbox), vendor
   static/icons/   the home-screen icon and manifest.json; drawn by make_icons.py
 tests/
   conftest.py     temp-database fixtures; never touches data/tecoma.db or data/photos
@@ -270,11 +306,17 @@ Product names are messy in ways that matter for search: inconsistent case
 name in Korean, and a few with dates baked in. Search must be case-insensitive and
 whitespace-tolerant. Don't "clean" the names in the database — staff recognise them as they are.
 
+**A search word is escaped before it becomes a LIKE pattern** — `_like()` in
+`app/routes/products.py`, matched by `ESCAPE '\'` on every `LIKE` it builds. `%` and `_` are
+wildcards, and unescaped they made a search for `%` return all 945 products; the shop sells
+`70% dark chocolate` and `99% sugar free`, so this is a real query and not a hypothetical. Live
+search made it worse by firing the wildcard mid-word. Never build the pattern inline again.
+
 ## Testing
 
 Two layers. Run both.
 
-**`pytest`** — 291 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 326 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
