@@ -11,9 +11,12 @@ lists the acceptance criteria each one has to meet.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 from conftest import STAFF_NAME, STAFF_PIN, days
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # --------------------------------------------------------------- signing in
@@ -646,6 +649,32 @@ def test_search_that_matches_nothing_says_so(client, sample):
     assert "Nothing matches that." in client.get("/products?q=zzzzzz").text
 
 
+def test_search_treats_a_percent_sign_as_a_character(client, sample, db):
+    """`%` is LIKE's "anything" wildcard, so it used to match every product in
+    the shop. The real export has "70% dark chocolate" and "99% sugar free" in
+    it, and someone typing 70% wants those, not all 945 rows."""
+    db.execute(
+        "INSERT INTO products (barcode, name) VALUES (?, ?)",
+        ("9300600000070", "Tony’s Chocolonely 70% dark chocolate"),
+    )
+    db.commit()
+
+    # The wildcard alone finds the one product with a percent sign in its name,
+    # not the whole catalogue.
+    body = client.get("/products?q=%25").text
+    assert "Chocolonely" in body
+    assert "Monster Ultra Zero 500ml" not in body
+
+    # And the way a person would actually type it.
+    assert "Chocolonely" in client.get("/products?q=70%25").text
+
+
+def test_search_treats_an_underscore_as_a_character(client, sample):
+    """`_` is LIKE's "any one character". No product name here has one, so the
+    honest answer is nothing — not everything."""
+    assert "Nothing matches that." in client.get("/products?q=_").text
+
+
 def test_live_search_returns_only_the_rows_fragment(client, sample):
     """search-live.js fetches ?partial=1 and drops the result straight into the
     page as someone types, so the fragment has to be the rows alone — no header,
@@ -672,6 +701,73 @@ def test_the_products_page_enhances_search_and_scroll(client, sample):
     assert "search-live.js" in body
     assert "list-scroll.js" in body
     assert 'id="product-results"' in body
+
+
+def test_pages_are_compressed_on_the_way_out(client, sample):
+    """The Due screen is 485 KB of HTML on the shop's data and ~20 KB gzipped —
+    about 2.5 seconds of a weak WiFi link, on the first page of every session.
+    Losing this middleware would be invisible on the dev laptop and painful in
+    the shop, which is exactly the kind of regression worth a test."""
+    response = client.get("/products?all=1", headers={"Accept-Encoding": "gzip"})
+    assert response.headers.get("content-encoding") == "gzip"
+
+
+def test_a_versioned_asset_can_be_kept_but_an_unversioned_one_cannot(client, sample):
+    """asset_url() and photo_url() stamp the file's mtime into the URL, so those
+    bytes can never change and a device may keep them for a year. The icons are
+    referenced by plain path, so they must not be frozen — a redrawn icon has to
+    be able to reach a device that already has one."""
+    versioned = client.get("/static/css/app.css?v=123").headers["Cache-Control"]
+    assert "immutable" in versioned
+    assert "max-age=31536000" in versioned
+
+    plain = client.get("/static/icons/icon-32.png").headers["Cache-Control"]
+    assert "immutable" not in plain
+
+    # Photos sit behind the PIN, so they are not for a shared cache.
+    assert "private" in client.get("/data/photos/nope.jpg?v=1").headers.get(
+        "Cache-Control", "private"
+    )
+
+
+def test_a_missing_page_is_a_sentence_not_json(client, sample):
+    """Staff used to get {"detail":"Not Found"} on a blank page, which reads as
+    the app being broken rather than a link being stale. It also has to offer a
+    way out, because the error page carries no nav bar."""
+    response = client.get("/products/999999")
+    assert response.status_code == 404
+    assert "text/html" in response.headers["content-type"]
+    assert "detail" not in response.text
+    assert "Not found" in response.text
+    assert 'href="/"' in response.text          # a way back
+
+
+def test_the_error_page_needs_nothing_from_the_database(client, sample):
+    """It does not extend base.html and asks for no settings row, so it still
+    renders when the thing that is broken *is* the database."""
+    raw = (ROOT / "app" / "templates" / "error.html").read_text(encoding="utf-8")
+    # Comments first: the reasoning above names the very things being banned.
+    template = re.sub(r"\{#.*?#\}", "", raw, flags=re.DOTALL)
+    assert "extends" not in template
+    assert "shop_name" not in template
+    assert "{{ user" not in template
+
+
+def test_a_redirect_raised_as_an_exception_is_still_a_redirect(client, sample, db, staff):
+    """current_user bounces a retired account by raising a 303 with a Location
+    header. The error-page handler must let that through — turning it into an
+    HTML page saying "303" would quietly break the sign-in list."""
+    db.execute("UPDATE users SET active = 0 WHERE id = ?", (staff["id"],))
+    db.commit()
+
+    response = client.post(
+        f"/products/{sample['products']['monster']}/batches/"
+        f"{sample['batches']['overdue']}",
+        data={"status": "discounted"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
 
 
 def test_the_product_photo_opens_a_larger_view(client, sample, db):
