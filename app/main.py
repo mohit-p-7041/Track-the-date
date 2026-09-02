@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -133,6 +134,9 @@ WORDS = {
     404: ("Not found", "That page or product is not here. It may have been deleted."),
     403: ("Not allowed", "That is not something this account can do."),
     405: ("Not found", "That page or product is not here. It may have been deleted."),
+    422: ("That did not go through",
+          "Something on that form was missing, or was not the sort of answer it "
+          "expected. Go back and try it again."),
 }
 GENERIC = ("Something went wrong", "The app hit a problem and could not finish that.")
 
@@ -156,6 +160,19 @@ async def http_error_page(request: Request, exc: StarletteHTTPException):
     if exc.status_code < 400:
         return await http_exception_handler(request, exc)
     return _error_page(request, exc.status_code)
+
+
+@app.exception_handler(RequestValidationError)
+async def form_error_page(request: Request, exc: RequestValidationError):
+    """A form that did not arrive in the shape a route expected.
+
+    FastAPI answers these itself, and its answer is a JSON list of the fields
+    it could not parse — `{"detail":[{"loc":["body","days"] ...`. That is a
+    useful thing to hand an API client and a baffling thing to hand somebody in
+    a shop, and it does not come through the HTTPException handler above
+    because a validation error is not one.
+    """
+    return _error_page(request, 422)
 
 
 @app.exception_handler(Exception)

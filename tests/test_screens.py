@@ -781,6 +781,19 @@ def test_a_missing_page_is_a_sentence_not_json(client, sample):
     assert 'href="/"' in response.text          # a way back
 
 
+def test_a_form_that_does_not_parse_is_a_sentence_not_json(client, sample):
+    """FastAPI answers a validation failure itself, with a JSON list of the
+    fields it could not parse — `{"detail":[{"loc":["body","days"]...`. Useful
+    to an API client, baffling in a shop, and it does not travel through the
+    HTTPException handler because a validation error is not one."""
+    response = client.post("/settings/window", data={"days": "abc"})
+    assert response.status_code == 422
+    assert "text/html" in response.headers["content-type"]
+    assert "loc" not in response.text          # no internal field paths
+    assert "did not go through" in response.text
+    assert 'href="/"' in response.text
+
+
 def test_the_error_page_needs_nothing_from_the_database(client, sample):
     """It does not extend base.html and asks for no settings row, so it still
     renders when the thing that is broken *is* the database."""
