@@ -3,7 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  {# "no", not "yes", and that is deliberate — see the iPad camera below.
+     A home-screen icon on iOS opens in one of two modes. "yes" opens a
+     standalone web app with no Safari chrome, which looks the part but, on the
+     iPad versions in the shop, cannot open the live scanning camera:
+     getUserMedia is simply absent there, so the "Scan with camera" button
+     never even appears and the aisle scan is dead. "no" opens the same icon in
+     Safari proper, where the camera works over HTTPS like any other page.
+     The trade is Safari's address bar at the top, which is a fair price for a
+     feature the app is partly built around.
+
+     This governs iOS only. The manifest still says display:standalone, so the
+     Android scanner phone — which has no such camera restriction — keeps its
+     full-screen app. An iPad already holding a standalone icon must have it
+     removed and re-added for the change to take, since the mode is fixed when
+     the icon is saved; see docs/DEVICE-SETUP.md. #}
+  <meta name="apple-mobile-web-app-capable" content="no">
   <meta name="theme-color" content="#00693c">
   <title>{% block title %}Track the Date{% endblock %} — {{ shop_name }}</title>
 

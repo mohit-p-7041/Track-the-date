@@ -816,6 +816,24 @@ def test_an_icon_never_carries_an_aria_role(client, sample):
         assert not re.search(r"\brole\s*=", body), f"{path.name} carries a role attribute"
 
 
+def test_the_home_screen_icon_opens_in_safari_for_the_camera():
+    """iOS blocks the live scanning camera in a standalone home-screen web app
+    on the shop's iPads, so the icon has to open in Safari instead —
+    `apple-mobile-web-app-capable` is "no", not "yes".
+
+    Flipping it back to "yes" looks like a nicer full-screen app and silently
+    kills the aisle scan on every iPad: getUserMedia is absent there, so the
+    "Scan with camera" button never even appears. The Android scanner phone has
+    no such restriction and keeps display:standalone via the manifest — this is
+    an iOS-only knob.
+    """
+    base = (ROOT / "app" / "templates" / "base.html").read_text(encoding="utf-8")
+    assert 'name="apple-mobile-web-app-capable"' in base
+    assert re.search(
+        r'name="apple-mobile-web-app-capable"\s+content="no"', base
+    ), "the home-screen icon is standalone again — the iPad camera will not open"
+
+
 def test_yellow_marks_a_state_and_is_never_an_action():
     """The discount sticker is the one saturated yellow in the app, and it
     works because it is the only one. The moment a button takes that colour

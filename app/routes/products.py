@@ -73,6 +73,7 @@ def product_list(
     q: str = "",
     category: str | None = None,
     all: str = "",
+    partial: str = "",
     conn: sqlite3.Connection = Depends(get_conn),
 ):
     tokens = _tokens(q)
@@ -123,10 +124,16 @@ def product_list(
     rows = conn.execute(sql, params).fetchall()
     shown = rows if all else rows[:PAGE]
 
+    # `partial=1` asks for just the results, for search-live.js to drop into the
+    # page as someone types. The row markup is one template either way, so the
+    # live list and the full page can never disagree. The category chips are not
+    # in it — typing does not change them.
+    template = "_product_rows.html" if partial else "products.html"
+
     return render(
         request,
         conn,
-        "products.html",
+        template,
         rows=shown,
         total=len(rows),
         truncated=len(rows) - len(shown),
