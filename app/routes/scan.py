@@ -55,7 +55,7 @@ def scan(
     request: Request,
     barcode: str = "",
     added: int | None = None,
-    photo_problem: int | None = None,
+    photo_problem: str = "",
     conn: sqlite3.Connection = Depends(get_conn),
 ):
     """Step one: the barcode. Step two if a barcode came with the request."""
@@ -66,8 +66,15 @@ def scan(
     # A photo that Pillow refused on the previous add. The batch itself saved —
     # that is the whole point of reporting it here rather than failing the add —
     # so this says what did not happen, next to the confirmation of what did.
-    message = "The date saved, but that photo did not — it was not an image." \
+    # Says which of the two things happened, in that order: the date is the
+    # point of the screen, so it is reported first and the photo second. The
+    # reason travels as a code (see app/photos.py) rather than being assumed —
+    # it used to always read "it was not an image", which is the wrong sentence
+    # for a picture that was a perfectly good image and merely too big.
+    message = (
+        f"The date saved, but the photo did not. {photos.problem_message(photo_problem)}"
         if photo_problem else ""
+    )
     barcode = clean_barcode(barcode)
     if barcode:
         barcode, message = parse_barcode(barcode)
@@ -184,6 +191,6 @@ def add(
     conn.commit()
     if problem:
         return RedirectResponse(
-            f"/scan?added={batch_id}&photo_problem=1", status_code=303
+            f"/scan?added={batch_id}&photo_problem={problem}", status_code=303
         )
     return RedirectResponse(f"/scan?added={batch_id}", status_code=303)

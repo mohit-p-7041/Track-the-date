@@ -103,11 +103,30 @@ def test_login_page_works_with_no_staff_at_all(anon_client):
 # ------------------------------------------------------------------- home
 
 def test_home_renders_when_empty(client):
-    """A fresh database is a valid state. The home screen must not need data."""
+    """A fresh database is a valid state. The home screen must not need data.
+
+    It also must not say "nothing due in the next 7 days" here. That sentence
+    is reassurance — all clear, nothing coming up — and on a database with no
+    products in it the truth is the opposite: the app has never been used. This
+    is the first screen a new shop sees, so it says so and points at the one
+    thing to do next.
+    """
     response = client.get("/")
     assert response.status_code == 200
     assert "BP Tecoma" in response.text
+    assert "Nothing is being tracked yet" in response.text
+    assert 'href="/scan"' in response.text
+    assert "Nothing due in the next" not in response.text
+
+
+def test_a_stocked_shop_with_a_quiet_week_still_says_nothing_is_due(client, sample, db):
+    """The other half of the pair. Products exist and none is due soon, which is
+    a real all-clear and must keep reading as one."""
+    db.execute("DELETE FROM batches")
+    db.commit()
+    response = client.get("/")
     assert "Nothing due in the next 7 days" in response.text
+    assert "Nothing is being tracked yet" not in response.text
 
 
 def test_home_shows_due_items(client, sample):
@@ -647,6 +666,26 @@ def test_search_by_barcode(client, sample):
 
 def test_search_that_matches_nothing_says_so(client, sample):
     assert "Nothing matches that." in client.get("/products?q=zzzzzz").text
+
+
+def test_an_empty_catalogue_is_not_a_failed_search(client, staff):
+    """No `sample` fixture here — this is a shop that has not started.
+
+    "Nothing matches that." answers a question nobody asked. Products are
+    created by scanning, so the empty screen says that and offers the way in
+    rather than implying a search came back empty.
+    """
+    body = client.get("/products").text
+    assert "No products yet" in body
+    assert 'href="/scan"' in body
+    assert "Nothing matches that." not in body
+
+
+def test_a_search_that_finds_nothing_still_says_so(client, sample):
+    """The other half: with products present, a miss is a miss."""
+    body = client.get("/products?q=zzzzzz").text
+    assert "Nothing matches that." in body
+    assert "No products yet" not in body
 
 
 def test_search_treats_a_percent_sign_as_a_character(client, sample, db):
@@ -2146,6 +2185,47 @@ def test_a_bad_photo_does_not_cost_you_the_date(client, sample, db):
         "SELECT image_path FROM products WHERE barcode = ?", ("9300609876543",)
     ).fetchone()[0] is None
     assert "photo did not" in response.text
+
+
+def test_an_enormous_image_does_not_cost_you_the_date(client, sample, db):
+    """The same rule as the test above, for the failure that got past it.
+
+    store_upload only caught OSError, which covers "this is not an image" and
+    almost nothing else. Pillow refuses an image with far too many pixels by
+    raising DecompressionBombError, which is not an OSError — so it came out of
+    the route, the commit below it never ran, and the batch inserted moments
+    earlier went with it. The person is told the app crashed, and the date they
+    typed correctly is gone.
+
+    It does not take a malicious file: a solid-colour PNG of 20000x12000 is
+    under a megabyte on disk, so it sails past the size limit and only becomes
+    240 million pixels once Pillow opens it.
+    """
+    import io
+
+    from PIL import Image
+
+    from app.photos import MAX_UPLOAD_BYTES
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (20000, 12000), (255, 0, 0)).save(buffer, "PNG")
+    bomb = buffer.getvalue()
+    assert len(bomb) < MAX_UPLOAD_BYTES, "the size limit would have caught it"
+
+    before = db.execute("SELECT COUNT(*) FROM batches").fetchone()[0]
+    response = client.post("/scan/add", data={
+        "barcode": "9300609876543", "expiry_date": days(6),
+    }, files={"photo": ("huge.png", bomb, "image/png")}, follow_redirects=True)
+
+    assert response.status_code == 200
+    # The date is the point of the screen. It survives a photo that does not.
+    assert db.execute("SELECT COUNT(*) FROM batches").fetchone()[0] == before + 1
+    assert "photo did not" in response.text
+    # And it says what actually went wrong. This was a real image, so telling
+    # somebody it "was not an image" would send them looking for the wrong
+    # thing — the reason travels through the redirect as a code.
+    assert "too large to process" in response.text
+    assert "was not an image" not in response.text
 
 
 def test_photo_js_does_not_steer_the_browser_itself(client):
