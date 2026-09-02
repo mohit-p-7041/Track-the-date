@@ -646,6 +646,53 @@ def test_search_that_matches_nothing_says_so(client, sample):
     assert "Nothing matches that." in client.get("/products?q=zzzzzz").text
 
 
+def test_live_search_returns_only_the_rows_fragment(client, sample):
+    """search-live.js fetches ?partial=1 and drops the result straight into the
+    page as someone types, so the fragment has to be the rows alone — no header,
+    and not the search form again (which would nest one form inside another)."""
+    body = client.get("/products?q=cool+ridge&partial=1").text
+    assert "C/RIDGE WATER 1L" in body            # the scored match still surfaces
+    assert "<html" not in body                   # no base chrome
+    assert 'id="product-search"' not in body     # not the search form
+    assert 'id="product-results"' not in body    # not the container it fills
+
+
+def test_live_search_fragment_runs_the_same_search(client, sample):
+    """The partial is the ordinary query, so it agrees with the full page —
+    a miss says so, and a filter that excludes the water really excludes it."""
+    assert "Nothing matches that." in client.get("/products?q=zzzzzz&partial=1").text
+    assert "C/RIDGE WATER 1L" not in client.get("/products?q=monster&partial=1").text
+
+
+def test_the_products_page_enhances_search_and_scroll(client, sample):
+    """The full page carries the two enhancement scripts and the container they
+    act on. Without them the plain form still submits; with them the list
+    filters as you type and returning to it keeps your place."""
+    body = client.get("/products").text
+    assert "search-live.js" in body
+    assert "list-scroll.js" in body
+    assert 'id="product-results"' in body
+
+
+def test_the_product_photo_opens_a_larger_view(client, sample, db):
+    """Tapping the thumbnail opens the full-size photo. The thumbnail is marked
+    for lightbox.js; a product with no photo has nothing to enlarge."""
+    with_photo = sample["products"]["monster"]
+    db.execute(
+        "UPDATE products SET image_path = ? WHERE id = ?",
+        ("data/photos/9300601234567.jpg", with_photo),
+    )
+    db.commit()
+
+    body = client.get(f"/products/{with_photo}").text
+    assert "data-lightbox" in body
+    assert "lightbox.js" in body
+
+    # The curly-apostrophe product has no photo — nothing to open.
+    without = client.get(f"/products/{sample['products']['curly']}").text
+    assert "data-lightbox" not in without
+
+
 def test_product_list_filters_by_category(client, sample):
     body = client.get(f"/products?category={sample['cat_id']}").text
     assert "Monster Ultra Zero 500ml" in body

@@ -3,9 +3,11 @@
 
 {% block content %}
 
-  <form class="search" method="get" action="/products">
+  {# The id lets search-live.js find the field and enhance it; without the
+     script this posts as an ordinary GET and works exactly as before. #}
+  <form class="search" method="get" action="/products" id="product-search">
     <input class="field" type="search" name="q" value="{{ q }}" autocomplete="off"
-           placeholder="Name or barcode" aria-label="Search products">
+           placeholder="Name or barcode" aria-label="Search products" id="product-q">
     {% if selected %}<input type="hidden" name="category" value="{{ selected }}">{% endif %}
     <button class="btn" type="submit"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-search"/></svg>Search</button>
   </form>
@@ -23,49 +25,20 @@
     </nav>
   {% endif %}
 
-  {% if rows %}
-    <ul class="items">
-      {% for r in rows %}
-        {# The whole rectangle is the link — thumbnail and date column included.
-           There are no buttons on this row, so nothing has to stay outside it.
-           The Due screen got this on 13 Aug and this page was missed: tapping the
-           picture did nothing, and it is the first thing a thumb reaches. #}
-        <li class="item">
-          <a class="item-row item-row-full" href="/products/{{ r.id }}">
-            {% if r.image_path %}
-              <img class="thumb" src="{{ photo_url(r.image_path) }}" alt="">
-            {% else %}
-              <span class="thumb thumb-empty" aria-hidden="true"></span>
-            {% endif %}
-            <span class="item-body">
-              <span class="item-name">{{ r.name }}</span>
-              <span class="item-meta">
-                {{ r.barcode }}{% if r.category %} &middot; {{ r.category }}{% endif %}
-              </span>
-            </span>
-            <span class="item-right">
-              {% if r.next_expiry %}
-                {{ r.next_expiry | au_date }}
-                {% if r.live_count > 1 %}<span class="item-meta">+{{ r.live_count - 1 }} more</span>{% endif %}
-              {% else %}
-                <span class="item-meta">nothing tracked</span>
-              {% endif %}
-            </span>
-          </a>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="empty">Nothing matches that.</p>
-  {% endif %}
+  {# search-live.js replaces the contents of this container as you type. The
+     row markup is the partial so the live results and this first render are
+     one and the same. #}
+  <div id="product-results">
+    {% include "_product_rows.html" %}
+  </div>
 
-  <p class="foot">
-    {% if truncated %}
-      Showing the {{ rows | length }} soonest of {{ total }}.
-      <a href="/products?{% if q %}q={{ q | urlencode }}&amp;{% endif %}{% if selected %}category={{ selected }}&amp;{% endif %}all=1">Show all {{ total }}</a>
-    {% else %}
-      {{ total }} product{{ '' if total == 1 else 's' }}.
-    {% endif %}
-  </p>
+{% endblock %}
 
+{% block scripts %}
+  {# Remembers where you were in the list so coming back from a product does not
+     dump you at the top. Enhancement only — see list-scroll.js. #}
+  <script src="{{ asset_url('static/js/list-scroll.js') }}"></script>
+  {# Filters the list as you type, without a round trip through the Search
+     button. Enhancement only — see search-live.js. #}
+  <script src="{{ asset_url('static/js/search-live.js') }}"></script>
 {% endblock %}

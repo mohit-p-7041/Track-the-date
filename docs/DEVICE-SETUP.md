@@ -80,11 +80,18 @@ same failure as doing nothing.
 2. Sign in with your name and PIN, so the icon opens straight into the app later.
 3. **Share button (the box with the arrow) → Add to Home Screen → Add.**
 
-The icon is the green coffee cup, labelled **Track the Date**. Tapping it opens the app full
-screen with no Safari address bar — it behaves like an app, which is the point.
+The icon is the green coffee cup, labelled **Track the Date**. Tapping it opens the app in Safari,
+with the normal address bar at the top.
 
-> The icon and its name come from the app itself. If you added it to the home screen before
-> today's update and got a blurry screenshot instead, remove it and add it again.
+> **Why Safari and not a full-screen app?** A full-screen home-screen web app on these iPads
+> cannot open the live scanning camera — iOS blocks it there, so the **Scan with camera** button
+> in the aisles never appears. Opening in Safari fixes that at the cost of the address bar. The
+> file-picker "Take Photo" on the product screen was never affected either way.
+>
+> **If you added this icon before today's update**, it is still stuck in the old full-screen mode
+> and the aisle camera will not work from it. **Remove the icon and add it again** (steps above)
+> so it re-opens in Safari. A blurry-screenshot icon from even earlier is fixed by the same
+> remove-and-re-add.
 
 ### 2.3 Prove it works before you walk away
 

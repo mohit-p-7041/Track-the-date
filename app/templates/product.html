@@ -9,7 +9,10 @@
   <div class="card">
     <div class="known">
       {% if product.image_path %}
-        <img class="thumb thumb-big" src="{{ photo_url(product.image_path) }}" alt="">
+        {# data-lightbox: tap to see it full size. lightbox.js only; without JS
+           it is an ordinary thumbnail. #}
+        <img class="thumb thumb-big" data-lightbox
+             src="{{ photo_url(product.image_path) }}" alt="{{ product.name }}">
       {% else %}
         <span class="thumb thumb-big thumb-empty" aria-hidden="true"></span>
       {% endif %}
@@ -177,4 +180,6 @@
 
 {% block scripts %}
   <script src="{{ asset_url('static/js/photo.js') }}"></script>
+  {# Tap the product photo to see it full size — see lightbox.js. #}
+  <script src="{{ asset_url('static/js/lightbox.js') }}"></script>
 {% endblock %}
