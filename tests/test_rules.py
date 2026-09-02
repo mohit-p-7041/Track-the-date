@@ -816,6 +816,41 @@ def test_an_icon_never_carries_an_aria_role(client, sample):
         assert not re.search(r"\brole\s*=", body), f"{path.name} carries a role attribute"
 
 
+def test_the_row_buttons_keep_a_thumb_sized_target():
+    """Discount and Delete render 31px tall, and Apple asks for 44.
+
+    They are the most-tapped controls in the shop and they are tapped
+    one-handed, walking, holding stock — and one of the two cannot be undone.
+    The fix is a hit area stretched past the button rather than a bigger
+    button, so 500 rows do not each grow 13px.
+
+    Vertically only. There are five pixels between Discount and Delete, so a
+    sideways stretch would put Delete's target under Discount's label. If this
+    ever grows `left`/`right` offsets, that is the bug it is reintroducing.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS.read_text(encoding="utf-8"), flags=re.DOTALL)
+
+    rule = re.search(r"\.btn-small::after\s*\{([^}]*)\}", css)
+    assert rule, "the row buttons no longer stretch their touch target"
+    body = rule.group(1)
+
+    # Stretched top and bottom by enough to clear 44px from a 31px button.
+    for edge in ("top", "bottom"):
+        found = re.search(rf"{edge}\s*:\s*-(\d+(?:\.\d+)?)px", body)
+        assert found, f"{edge} is not stretched"
+        assert float(found.group(1)) >= 6, f"{edge} stretch is too small to reach 44px"
+
+    # Never sideways: Discount and Delete are neighbours.
+    assert re.search(r"left\s*:\s*0", body), "left must pin to the button edge"
+    assert re.search(r"right\s*:\s*0", body), "right must pin to the button edge"
+    assert not re.search(r"(left|right)\s*:\s*-", body), \
+        "the touch target reaches sideways — Delete's target would sit under Discount"
+
+    # And it gets out of the way of the panel it reveals.
+    assert re.search(r"details\[open\]\s*>\s*\.btn-small::after\s*\{[^}]*bottom\s*:\s*0", css), \
+        "an open confirmation would sit under the summary's own touch target"
+
+
 def test_the_home_screen_icon_opens_in_safari_for_the_camera():
     """iOS blocks the live scanning camera in a standalone home-screen web app
     on the shop's iPads, so the icon has to open in Safari instead —

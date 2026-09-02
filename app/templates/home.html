@@ -104,8 +104,35 @@
     {{ batch_list(rows) }}
   {% endfor %}
 
+  {# Two different empties, and they were one message until now.
+
+     "Nothing due in the next 7 days" is the right answer for a shop that is
+     tracking things and has none coming up. It is the wrong answer on a
+     database with nothing in it at all, where it reads as reassurance — all
+     clear — when the truth is that the app has never been used and nobody has
+     scanned anything. That is the first screen a new shop sees, so it should
+     say what is actually true and what to do about it. #}
   {% if not overdue and not days %}
-    <p class="empty">Nothing due in the next {{ window }} days.</p>
+    {% if not total_products %}
+      {# A card rather than the muted `.empty` note the other empties use: this
+         is not a footnote under a list, it is the entire screen, and `.empty`
+         is 0.85rem of grey pinned to the left margin. Reuses form-wrap/card/
+         btn-wide from the scan and product screens rather than inventing a
+         first-run style that only ever appears once. #}
+      <div class="form-wrap">
+        <div class="card">
+          <p class="known-name">Nothing is being tracked yet.</p>
+          <p class="note">
+            Scan an item and give it an expiry date &mdash; that is the whole
+            job. Products create themselves as you go; there is nothing to set
+            up first.
+          </p>
+          <a class="btn btn-wide" href="/scan">Scan the first item</a>
+        </div>
+      </div>
+    {% else %}
+      <p class="empty">Nothing due in the next {{ window }} days.</p>
+    {% endif %}
   {% endif %}
 
   {# Everything past the window. It is on the page rather than hidden by it, but

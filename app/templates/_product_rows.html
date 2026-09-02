@@ -36,7 +36,24 @@
     {% endfor %}
   </ul>
 {% else %}
-  <p class="empty">Nothing matches that.</p>
+  {# "Nothing matches that" answers a question nobody asked when the catalogue
+     is simply empty — on a fresh database it reads as a failed search rather
+     than a shop that has not started yet. Only say it when something was
+     actually searched or filtered for. #}
+  {% if q or selected %}
+    <p class="empty">Nothing matches that.</p>
+  {% else %}
+    <div class="form-wrap">
+      <div class="card">
+        <p class="known-name">No products yet.</p>
+        <p class="note">
+          Products are created by scanning &mdash; there is no list to fill in
+          first. Scan a barcode and it appears here.
+        </p>
+        <a class="btn btn-wide" href="/scan">Scan the first item</a>
+      </div>
+    </div>
+  {% endif %}
 {% endif %}
 
 <p class="foot">

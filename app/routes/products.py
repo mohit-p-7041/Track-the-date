@@ -272,7 +272,10 @@ def edit_product(
         # which discards them anyway — but it says so, and it is what keeps this
         # correct if a commit is ever added above.
         conn.rollback()
-        return _detail_page(request, conn, product_id, editing=True, message=problem)
+        return _detail_page(
+            request, conn, product_id, editing=True,
+            message=photos.problem_message(problem),
+        )
     if stored:
         conn.execute("UPDATE products SET image_path = ? WHERE id = ?", (stored, product_id))
 
