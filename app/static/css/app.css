@@ -231,7 +231,12 @@ body {
    is the browser default for a bare <a> and reads as a different kind of thing
    from the destinations beside it. */
 .bar-who {
-  color: rgba(255, 255, 255, 0.72) !important;
+  /* 0.80, not the 0.72 this was. Against the bar's green that is 4.97:1 where
+     0.72 was 4.34:1 — under the 4.5 that small text is meant to clear, on the
+     one label in the app that says who every write is being recorded against.
+     Still visibly quieter than the 6.81:1 destinations beside it, which is the
+     point of the colour: it is identity, not a place to go. */
+  color: rgba(255, 255, 255, 0.8) !important;
   font-size: 0.85rem;
   text-decoration: none;
   padding: 0.5rem;
