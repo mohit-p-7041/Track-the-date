@@ -41,12 +41,57 @@ Done at the shop, in this order, following `docs/WINDOWS-SETUP.md`:
 - **The Android scanner phone** — the CA certificate is what its camera needs; without it the
   scanner still works and only photos are lost. `docs/DEVICE-SETUP.md` part 3.
 - **The remaining iPads.**
-- **`git pull` on the laptop.** It was cloned mid-session and is behind the per-day Due bands, the
-  scan-time photo, and the `setup_laptop.py` encoding fix. Re-run `setup.bat` after pulling.
-- **Confirm the import.** `python scripts\check_db.py` should say ~944 products; if it still says
-  0, run `scripts\import_beep.py … --today 2026-08-10`. Pin that date — without it the importer
-  skips everything that expired since the export was taken, which is a week of stock that is
-  still on the shelves and still needs pulling.
+- ~~**`git pull` on the laptop.**~~ Done 6 Sep — see the next section.
+- ~~**Confirm the import.**~~ Done 6 Sep: `check_db.py` passes all 14 checks with 944 products.
+
+## Updating the laptop — 6 Sep
+
+The laptop was three weeks behind: cloned mid-session on 16 Aug and never pulled. It is now
+current, and the procedure has been reduced to one double-click.
+
+**Double-click `update.bat`.** It pulls, installs anything new that `requirements.txt` asks for,
+and starts the app — the same window `start.bat` gives you. Close the app first if it is running;
+it will say so rather than half-doing it. `python scripts\update.py --check` says what is waiting
+and changes nothing.
+
+**Do not run it as administrator.** See below. It refuses if you do.
+
+Two things a pull cannot do for you, both of which have bitten:
+
+- **A new home-screen icon on every iPad** whenever the page's iOS settings change. The icon
+  bakes in how it opens at the moment it is added, so the 2 Sep camera fix only reaches an iPad
+  that deletes its icon and adds it again. `docs/DEVICE-SETUP.md`.
+- **A migration**, if one ever lands. `update.bat` stops before starting the app when
+  `app/schema.sql` changes or a new `scripts/migrate_*.py` appears, rather than running new code
+  against a database that does not match it.
+
+## git will not write from an administrator prompt on this laptop
+
+Found on 6 Sep, and it cost twenty minutes. `git pull` from an elevated PowerShell dies part way
+through with:
+
+```
+error: unable to write file .git/objects/81/f84a...: Permission denied
+fatal: failed to write object
+fatal: unpack-objects failed
+```
+
+The same command in a **normal** window works first time.
+
+It is not the obvious causes, all of which were checked and ruled out:
+
+| Suspected | Checked with | Result |
+|---|---|---|
+| Folder permissions | `icacls .git\objects` | `TECOMA\BP TECOMA:(I)(OI)(CI)(F)` — full control |
+| Defender ransomware protection | `Get-MpPreference \| Select EnableControlledFolderAccess` | `0` — off |
+| Disk full | `Get-PSDrive C` | 51 GB free |
+
+Which leaves something on this machine treating elevated processes differently — most likely a
+security product hooking them. Chasing it properly means Process Monitor and an afternoon, and it
+buys nothing: the normal window works, and is the correct way to run git anyway.
+
+**The rule: `setup.bat` needs administrator, for the firewall. `update.bat` and any git command
+must not have it.** `scripts/update.py` checks and refuses, so nobody has to remember.
 
 ## Is it enough?
 

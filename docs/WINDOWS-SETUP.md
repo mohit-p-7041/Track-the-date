@@ -106,15 +106,17 @@ If that says anything else, `git checkout main`. Getting this wrong is the confu
 wrong — the app runs, but it is an older version of it, and none of the files this guide talks
 about are there.
 
-To update the laptop later, from the same folder:
-
-```powershell
-git pull
-```
+To update the laptop later, **double-click `update.bat`** — that is the whole procedure, and
+there is a section on it below.
 
 That is safe: the shop's database, photos, certificates and backups are all excluded from git, so
-a pull brings new code and never touches the real data. If `git pull` complains about local
-changes, run `git status` first and read what it says rather than forcing anything.
+an update brings new code and never touches the real data.
+
+> **Never run git as administrator on this laptop.** An elevated window cannot write into
+> `.git\objects` and the pull dies half way through with `Permission denied`, while the same
+> command as the normal user works first time. Found 6 Sep; the causes you would suspect were all
+> ruled out and are written up in `docs/LAPTOP-NOTES.md`. `setup.bat` is the only file here that
+> wants administrator.
 
 > **Copied the folder from a USB stick instead?** Windows marks files that came from elsewhere as
 > blocked, and a blocked `.bat` refuses to run. Right-click `start.bat` → Properties → tick
@@ -322,6 +324,37 @@ Then go to `docs/DEVICE-SETUP.md` for the iPads and the scanner phone.
 
 ---
 
+## Installing a new version
+
+**Close the app, then double-click `update.bat`.** It brings the laptop up to the latest version
+and starts the app in the same window `start.bat` would have.
+
+It prints a line per step, and it stops rather than half-doing anything:
+
+| Step | What it checks | Why it stops |
+|---|---|---|
+| Administrator | That this is **not** an elevated window | git cannot write to `.git` from one on this laptop |
+| The app | That nothing is answering on the port | It can't update code that is in use |
+| The code | On `main`, nothing edited locally | A pull would refuse, or merge somebody's edit unwatched |
+| Update | `git pull --ff-only`, then names the commits that came down | Never makes a merge commit on the shop laptop |
+| Dependencies | Runs pip **only** if `requirements.txt` changed | A minute of network, most times for nothing |
+
+If it finds a schema change or a new migration script it updates the code, **does not start the
+app**, and says so — new code against an unmigrated database is a broken app in front of staff.
+Send that message on rather than starting it anyway.
+
+To see what is waiting without changing anything:
+
+```powershell
+python scripts\update.py --check
+```
+
+**After an update that changed how the page behaves on iOS, every iPad needs its home-screen icon
+deleted and added again** — the icon bakes in those settings when it is added, so a pull alone
+never reaches it. `docs/DEVICE-SETUP.md`.
+
+---
+
 ## Every day after that
 
 **Double-click the desktop icon. That is the whole procedure.** It backs up the database, prints
@@ -359,6 +392,7 @@ Work down this list. It is in order of how often each one is actually the proble
 | The camera button isn't there | Same thing, or you're on the `http://` address | Check the address bar says `https` |
 | A red wall of text in the black window | Something genuinely broke | The last few lines name it. `data\logs\ttd-<today>.log` has the same thing with timestamps |
 | Nothing happens on double-click | The `.bat` is blocked (came off a USB stick) | Right-click → Properties → Unblock |
+| `git pull` says `Permission denied` writing to `.git\objects` | It is being run from an administrator window | Close it, use a normal one — or just double-click `update.bat` |
 
 **The log.** Every session writes `data\logs\ttd-YYYY-MM-DD.log` — the requests, the errors, and
 anything that crashed. Kept for a fortnight. It is the only way to answer "what happened on
