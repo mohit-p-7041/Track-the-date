@@ -94,6 +94,14 @@ These were considered and settled. Don't "improve" them into something else.
   final — that is the asymmetry, and it is deliberate.
 - **A floating + is always in the bottom-right corner**, going to Scan. Adding a date is what this
   app is for; it should never need a trip to the nav bar.
+- **Updating is a double-click, and it is never elevated.** Added 6 Sep. `update.bat` pulls,
+  installs a changed `requirements.txt`, and starts the app. It refuses an administrator window,
+  because on the shop laptop git cannot write into `.git\objects` from one — checked against the
+  ACLs, Controlled Folder Access and free disk, all of which were fine; written up in
+  `docs/LAPTOP-NOTES.md`. It also refuses a dirty tree, refuses while the app is running, pulls
+  `--ff-only` so no merge commit is ever made in the shop, and **stops before starting the app**
+  when the pull carried a schema change or a new migration. Don't turn it into an auto-updater or
+  a service: an update lands when somebody chooses, not mid-session.
 - **On demand, not always on.** Staff double-click `start.bat` for a scan session (mainly
   weekends) and close the window after. No service, no auto-start. Backups therefore run at
   startup — a nightly job would never fire. An opt-in exists and is **off** by default:
@@ -144,6 +152,7 @@ These were considered and settled. Don't "improve" them into something else.
 ```
 start.bat       double-click launcher for a session: finds Python, runs scripts/serve.py
 setup.bat       one-time laptop setup, safe to re-run: runs scripts/setup_laptop.py
+update.bat      pull the latest version and start: runs scripts/update.py. Never as admin
 app/
   main.py         FastAPI app — wiring only: middleware, mounts, routers
   db.py           get_conn dependency — the only way a route opens the database
@@ -168,6 +177,7 @@ tests/
   test_screens.py routes render and show the right rows
   test_rules.py   the locked decisions, as executable tests
   test_serve.py   the launcher: ports, certificate check, refusing to start twice
+  test_update.py  the updater: the four refusals, against a real temp git clone
 data/
   tecoma.db       the database — never commit
   photos/         compressed product images — never commit
@@ -177,6 +187,7 @@ data/
   imports/        the beep Excel export
 scripts/
   serve.py        the launcher: scheme, port, log, and the certificate warning
+  update.py       the updater: refuses admin, refuses a dirty tree, pulls, starts
   setup_laptop.py one-time setup: deps, database, certificate, firewall, desktop icon
   make_icons.py   draws the home-screen icon; its outputs are committed
   init_db.py      create the database; also holds connect()
@@ -206,8 +217,10 @@ docs/
 ```bash
 setup.bat                                                    # shop laptop, once (and re-runnable)
 start.bat                                                    # shop laptop, every session
+update.bat                                                   # shop laptop, install a new version
 python scripts/serve.py --http                               # force plain http on 8000
 python scripts/setup_laptop.py --dry-run                     # what setup.bat would change
+python scripts/update.py --check                             # what update.bat would pull
 python scripts/make_icons.py                                 # redraw the home-screen icon
 pip install -r requirements.txt -r requirements-dev.txt      # dev machine
 pytest                                                       # run before committing
@@ -316,7 +329,7 @@ search made it worse by firing the wildcard mid-word. Never build the pattern in
 
 Two layers. Run both.
 
-**`pytest`** — 326 tests against a temporary database built from `schema.sql` in a temp directory.
+**`pytest`** — 341 tests against a temporary database built from `schema.sql` in a temp directory.
 It never touches `data/tecoma.db`, and an autouse fixture points photo uploads at a temp folder
 too, so it's safe to run on the shop laptop.
 
@@ -325,6 +338,10 @@ too, so it's safe to run on the shop laptop.
 - `tests/test_serve.py` — the launcher, the one piece of this staff touch directly. The ports
   can't drift, the certificate check still finds an address inside a real certificate, and a
   second double-click says "already running" rather than throwing a traceback at somebody.
+- `tests/test_update.py` — the updater. Real git, against a real clone built in a temp directory,
+  because every question here is "what does git actually do when…". The refusals are the subject,
+  not the pull: an administrator window, the app still running, local edits on the laptop, and a
+  pull carrying a schema change.
 - `tests/test_rules.py` — the locked decisions as tests. Not "nobody has broken this yet" but
   "this cannot be done": the duplicate guard raises, categories collide case-insensitively,
   `au_date` never emits US format or a leading zero.

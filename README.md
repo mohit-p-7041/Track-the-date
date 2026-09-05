@@ -36,7 +36,7 @@ Every screen in `docs/BACKLOG.md` is built and under test:
 Underneath: the schema with the duplicate guard at index level, the importer (944 products and
 1,746 batches from the real beep export), `scripts/backup.py`, and `scripts/check_db.py`.
 
-- `pytest` — 291 tests: the screens render, the locked decisions can't be broken, and the
+- `pytest` — 341 tests: the screens render, the locked decisions can't be broken, and the
   launcher staff double-click behaves
 - `python scripts/check_db.py` — 14 checks against the real database, 18 with `--expect-import`
 
