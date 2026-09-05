@@ -377,6 +377,130 @@ schedule. Keep the day otherwise empty; the first session always surfaces someth
 
 ---
 
+## From the shop — reported 6 Sep, after the update landed `[ ]`
+
+Four things, from actually using it on an iPad. In rough order of how often they bite. Nothing
+here is a crash; all four are the app making somebody do extra work, which on a screen used
+hundreds of times a week is the same thing.
+
+**Read items 3 and 4 together.** They are one cause with two faces, and fixing either one alone
+will look like it worked while leaving the other.
+
+### 9. Adding a date should not leave the product screen `[ ]`
+
+On a product, **Edit** opens a panel in place; **Add another date** navigates away to
+`/scan?barcode=…`. That link works exactly as designed — the scan route reads the barcode and
+renders step two, the known-product date form (`app/routes/scan.py`, the `{% elif product %}`
+branch of `scan.html`) — but it is still a trip to another screen, and the two buttons sitting
+side by side behave differently. When you are on the product, adding a date to it should happen
+on the product.
+
+- [ ] **Add another date** opens an inline panel on the product screen, the same `<details>`
+      shape as Edit, with the date field focused when it opens
+- [ ] It writes through the same code path as the scan add — same duplicate check, same
+      `added_by`, same `parse_expiry`. Not a second add path
+- [ ] A duplicate says "Already tracked — expires 14 Sep 2026" in the panel, and does not close
+      it or lose what was typed
+- [ ] Saving returns to the product screen with the new date in the list
+- [ ] Without JavaScript it still works — a `<details>` and a plain form post, as the delete
+      confirmation already is
+- [ ] `/scan?barcode=…` keeps working unchanged; the gun path is not touched
+
+Deliberately *not* removing the scan route's step two. That is the path the gun uses hundreds of
+times a week and it is the fastest thing in the app.
+
+### 10. The in-page camera panel, on the product edit screen `[ ]`
+
+Pressing **Camera** on a product's edit form reveals `#camera-panel` *below* the form, so the
+"Take photo" button is off the bottom of an iPad screen and needs a scroll to reach, and the
+preview is a `<video>` boxed inside the page rather than the fullscreen camera iOS gives you.
+Reported as the most annoying of the four.
+
+The fix asked for is to delete it and rely on the file input, which is already there
+(`accept="image/*"`) and which on iOS opens the native fullscreen camera through Take Photo.
+**The scan screen already works this way and says why** — see `photo_field()` in `scan.html`:
+a file input needs neither `getUserMedia` nor a secure context, so it is the control that works
+on every device in the shop, including the Chrome 50 handheld. This makes the product screen
+agree with the screen it should already have agreed with.
+
+- [ ] The Camera button and `#camera-panel` are gone from `product.html`
+- [ ] The file input stays, without `capture` — on the edit screen you may well be picking a
+      picture you already have, which is the distinction `scan.html` already documents
+- [ ] The browser-side shrink in `photo.js` still runs on a file chosen this way; the
+      `getUserMedia` half of that file goes with the panel
+- [ ] Taking a photo still does not submit the form. Save saves — the locked decision holds
+- [ ] A photo can still never cost you the date: `store_upload` keeps its broad `except`
+
+**The trade-off, stated:** the counter laptop loses webcam capture, because a file input there
+opens a file dialog and nothing else. That is the right way round — photos get taken at the
+shelf, on an iPad, with the item in someone's hand, and 940 of 945 products still have no photo
+at all. If somebody does want the laptop's webcam back later, that is a new item and not a
+reason to keep this one.
+
+### 11. Back after saving an edit goes back twice, and shows stale content `[ ]`
+
+Reported step by step, and reproducible:
+
+1. On Due, tap a product → product screen
+2. Edit, change the name, Save
+3. Back → **the product screen with the old name**
+4. Back again → the Due list, also showing the old name
+5. Refresh → correct at last, and now scrolled to the top
+
+**Cause.** `edit_product` correctly answers a POST with a 303 to `/products/{id}`
+(`app/routes/products.py:283`) — Post/Redirect/Get, which is right and should stay. But the
+redirect target *replaces the POST entry only*, so history now holds two entries for the same
+URL: the one you were on before saving, and the one after. Back lands on the first of those,
+restored from the back/forward cache with the pre-edit HTML in it. The second Back reaches Due,
+also from that cache, also stale. Nothing is wrong with the data — every one of those pages is a
+snapshot the browser kept.
+
+Two things need to be true, and they are separate:
+
+- [ ] One Back from a saved edit reaches **the list you came from**, not a second copy of the
+      product screen
+- [ ] The content it shows reflects the save. A page rendered before a write must not be
+      re-served from cache afterwards
+- [ ] The no-JavaScript path still saves and still lands somewhere sensible
+- [ ] Nothing gets a `no-store` blanket it does not need — the versioned-asset caching from
+      2 Sep is measured and stays exactly as it is
+
+The likely shape: submit the edit panel with `fetch` and update the panel in place, so no second
+history entry is ever created, keeping the 303 for the no-JS path. Cache headers on rendered
+HTML are the other half and want measuring, not guessing — the Due screen is 485 KB before gzip
+and its bfcache entry is doing real work on an old iPad.
+
+### 12. The products list loses your place coming back `[ ]`
+
+Same journey, different list: from a product back to `/products` and you are at the top again,
+every time, even though `list-scroll.js` exists to prevent exactly this.
+
+**Cause.** `list-scroll.js` restores the position *when the script runs*, which is a fresh page
+load. Coming back from a product screen, the page is usually restored from the back/forward
+cache instead — the script does not run at all. Worse, an earlier visit already set
+`history.scrollRestoration = 'manual'` on that entry, which persists, so the browser's own
+restore is switched off and nothing replaces it. The one path the file was written for is the one
+path it does not cover.
+
+- [ ] Returning to the same list URL restores the position on a bfcache restore as well as a
+      fresh load — a `pageshow` handler, checking `event.persisted`
+- [ ] `scrollRestoration` is only set to `manual` where the script actually does the restoring
+      itself, so switching the browser's own off can never leave nothing on
+- [ ] A *different* list — a new search, another category, "show all" — still starts at the top
+- [ ] Still enhancement only: with JavaScript off the list behaves as it does today
+- [ ] Confirmed on an iPad, not only in a desktop browser. This is a Safari behaviour and the
+      desktop does not reproduce it reliably
+
+**And the Due screen has no scroll memory at all** — `home.html` has no `{% block scripts %}`,
+so `list-scroll.js` was never loaded there. That is why step 5 above ends with a scroll back down
+to where you were. Adding it collides with a locked decision — *"The Due screen now carries no
+JavaScript at all"*, 13 Aug, which is why the delete confirmation is a server-rendered
+`<details>`. **That decision was about not putting actions behind JavaScript, and scroll memory
+is not an action** — but it is written broadly, so it gets amended deliberately and in writing
+before anything is added, or not at all. Ask first.
+
+---
+
 ## Not being built
 
 Recorded here so it doesn't get re-proposed.
